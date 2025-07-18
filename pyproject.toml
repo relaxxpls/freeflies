@@ -29,4 +29,4 @@ build-backend = "poetry.core.masonry.api"
 requires = ["poetry-core"]
 
 [tool.poetry.scripts]
-freeflies = "app:main"
+freeflies = "app:start_streamlit"

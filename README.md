@@ -1,4 +1,4 @@
-# FreeFLies - Google Meet Recorder & Transcriber
+# FreeFlies - Google Meet Recorder & Transcriber
 
 A Streamlit application that automatically joins Google Meet sessions, records audio, and provides real-time transcription using OpenAI Whisper.
 
