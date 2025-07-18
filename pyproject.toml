@@ -1,0 +1,32 @@
+[tool.poetry]
+authors = ["Laxman Desai <lolopaw24@gmail.com>"]
+description = "A Streamlit application for recording and transcribing Google Meet sessions"
+name = "freeflies"
+packages = [{ include = "src" }]
+readme = "README.md"
+version = "0.1.0"
+
+[tool.poetry.dependencies]
+asyncio = "^3.4.3"
+openai-whisper = "^20250625.0.0"
+pandas = "^2.3.1"
+pillow = "^11.3.0"
+playwright = "^1.53.0"
+python = "^3.12"
+python-dotenv = "^1.1.1"
+requests = "^2.32.4"
+sounddevice = "^0.5.2"
+soundfile = "^0.13.1"
+streamlit = "^1.47.0"
+
+[tool.poetry.group.dev.dependencies]
+black = "^25.1.0"
+flake8 = "^7.3.0"
+pytest = "^8.4.1"
+
+[build-system]
+build-backend = "poetry.core.masonry.api"
+requires = ["poetry-core"]
+
+[tool.poetry.scripts]
+freeflies = "app:main"
