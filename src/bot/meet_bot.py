@@ -1,6 +1,6 @@
 import asyncio
-import time
-from typing import Optional, Dict, Any
+import os
+from typing import Optional
 from playwright.async_api import (
     async_playwright,
     Browser,
@@ -9,8 +9,9 @@ from playwright.async_api import (
     Playwright,
 )
 import logging
+from dotenv import load_dotenv
 
-# Configure logging
+load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -19,14 +20,10 @@ class MeetBot:
     """MeetBot class for interacting with Google Meet"""
 
     is_joined = False
-    meeting_url = None
     browser: Optional[Browser] = None
     context: Optional[BrowserContext] = None
     page: Optional[Page] = None
     playwright: Optional[Playwright] = None
-
-    # def __init__(self):
-    #     self._setup_browser()
 
     async def _setup_browser(self):
         """Initialize browser and context"""
@@ -52,49 +49,80 @@ class MeetBot:
         user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         await self.page.set_extra_http_headers({"User-Agent": user_agent})
 
-    async def _login_async(self) -> bool:
-        assert self.page is not None
-        GMEET_URL = "https://accounts.google.com/ServiceLogin?ltmpl=meet&continue=https://meet.google.com?hs=193&ec=wgc-meet-hero-signin"
-        await self.page.goto(GMEET_URL)
-        await self.page.wait_for_selector("input[name='identifier']")
-        await self.page.fill("input[name='identifier']", "fijit.club@gmail.com")
-        await self.page.click("button[type='submit']")
-        await self.page.wait_for_selector("input[name='password']")
-        await self.page.fill("input[name='password']", "1234567890")
-        await self.page.click("button[type='submit']")
+    async def _login(self):
+        """Login to Google"""
 
-    async def _join_meeting_async(self, meet_url: str) -> bool:
-        """Join a meeting"""
+        if self.page is None:
+            await self._setup_browser()
+            assert self.page is not None
+
+        GMEET_URL = "https://accounts.google.com/ServiceLogin?ltmpl=meet&continue=https://meet.google.com?hs=193&ec=wgc-meet-hero-signin"
+        EMAIL = os.getenv("GOOGLE_EMAIL")
+        PASSWORD = os.getenv("GOOGLE_PASSWORD")
+
+        if not EMAIL or not PASSWORD:
+            raise ValueError(
+                "GOOGLE_EMAIL and GOOGLE_PASSWORD environment variables must be set"
+            )
+
+        await self.page.goto(GMEET_URL)
+
+        # Enter email
+        await self.page.fill("#identifierId", EMAIL)
+        await self.page.click("#identifierNext")
+        await self.page.wait_for_selector("#password", timeout=10000)
+
+        # Enter password
+        await self.page.fill('#password input[type="password"]', PASSWORD)
+        await self.page.click("#passwordNext")
+        await self.page.wait_for_load_state("networkidle")
+
+        logger.info("Google login activity: Done")
+
+    async def _join_meeting_async(self, meet_url: str):
+        """Login and join a meeting asynchronously"""
+
+        if self.page is None:
+            await self._setup_browser()
+            assert self.page is not None
+
+        await self._login()
+
         await self.page.goto(meet_url)
-        await self.page.wait_for_selector("button:has-text('Join')")
-        await self.page.click("button:has-text('Join')")
+        button = await self.page.query_selector('button:has(span:text("Ask to join"))')
+        if button:
+            await button.wait_for_element_state("visible")
+            await button.click()
+        else:
+            raise Exception("Button not found")
+
+        await self.page.wait_for_load_state("networkidle")
+        logger.info("Successfully joined meeting")
 
     def join_meeting(self, meet_url: str) -> bool:
-        """Simulate joining a meeting"""
-        logger.info(f"Dummy: Joining meeting at {meet_url}")
-        time.sleep(2)  # Simulate loading time
-        self.meeting_url = meet_url
-        self.is_joined = True
-        logger.info("Dummy: Successfully joined meeting")
-        return True
+        """Join a meeting synchronously"""
+        try:
+            logger.info(f"Joining meeting at {meet_url}")
+
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(self._join_meeting_async(meet_url))
+            self.is_joined = True
+            logger.info("Successfully joined meeting")
+
+            return True
+        except Exception as e:
+            logger.error(f"Error joining meeting: {str(e)}")
+            return False
 
     def leave_meeting(self) -> bool:
-        """Simulate leaving a meeting"""
-        logger.info("Dummy: Leaving meeting")
+        """Leave a meeting"""
+        logger.info("Leaving meeting")
         self.is_joined = False
-        logger.info("Dummy: Successfully left meeting")
+        logger.info("Successfully left meeting")
         return True
 
     def cleanup(self):
-        """Dummy cleanup"""
-        logger.info("Dummy: Cleanup completed")
+        """Cleanup"""
+        logger.info("Cleanup completed")
         pass
-
-    def get_meeting_info(self) -> Dict[str, Any]:
-        """Get dummy meeting info"""
-        return {
-            "is_joined": self.is_joined,
-            "meeting_url": self.meeting_url,
-            "browser_active": False,
-            "page_active": False,
-        }

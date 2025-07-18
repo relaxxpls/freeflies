@@ -18,6 +18,7 @@ requests = "^2.32.4"
 sounddevice = "^0.5.2"
 soundfile = "^0.13.1"
 streamlit = "^1.47.0"
+watchdog = "^6.0.0"
 
 [tool.poetry.group.dev.dependencies]
 black = "^25.1.0"
