@@ -1,11 +1,15 @@
+from typing import Optional
 import streamlit as st
+from streamlit.runtime.scriptrunner import add_script_run_ctx
 import threading
 import time
 from datetime import datetime, timedelta
 import re
+import atexit
 
 from src.bot.meet_bot import MeetBot
 from src.recording.audio_recorder import AudioRecorder
+from src.transcription.summarize import Summarizer
 from src.transcription.transcriber import Transcriber
 
 # Configure Streamlit page
@@ -16,6 +20,9 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# Global thread management
+transcription_thread: Optional[threading.Thread] = None
+
 
 def initialize_session_state():
     """Initialize session state variables"""
@@ -24,17 +31,24 @@ def initialize_session_state():
     if "transcription_active" not in st.session_state:
         st.session_state.transcription_active = False
 
-    if "transcription_text" not in st.session_state:
-        st.session_state.transcription_text = ""
+    if "transcription" not in st.session_state:
+        st.session_state.transcription = []
     if "meeting_history" not in st.session_state:
         st.session_state.meeting_history = []
+    if "current_summary" not in st.session_state:
+        st.session_state.current_summary = None
 
-    if "meet_bot" not in st.session_state:
-        st.session_state.meet_bot = MeetBot()
+    # if "meet_bot" not in st.session_state:
+    #     st.session_state.meet_bot = MeetBot()
+    #     atexit.register(lambda: st.session_state.meet_bot.cleanup())
     if "audio_recorder" not in st.session_state:
         st.session_state.audio_recorder = AudioRecorder()
+        atexit.register(lambda: st.session_state.audio_recorder.cleanup())
     if "transcriber" not in st.session_state:
         st.session_state.transcriber = Transcriber()
+        atexit.register(lambda: st.session_state.transcriber.cleanup())
+    if "summarizer" not in st.session_state:
+        st.session_state.summarizer = Summarizer()
 
 
 def validate_meet_url(url: str) -> bool:
@@ -57,15 +71,31 @@ def display_status(message: str, status_type: str = "info"):
     )
 
 
+def get_transcription_text(
+    transcription: Optional[list[dict]] = None, timestamp: bool = False
+):
+    if not transcription:
+        transcription = st.session_state.transcription
+    assert isinstance(transcription, list)
+
+    if timestamp:
+        return "\n".join([f"[{t['timestamp']}] {t['text']}" for t in transcription])
+    return " ".join([t["text"] for t in transcription])
+
+
 def start_recording(meet_url: str):
     """Start the recording process"""
+    global transcription_thread
+
     try:
+        st.session_state.transcription = []
+
         with st.spinner("Joining Google Meet..."):
             # Join the meeting
-            joined = st.session_state.meet_bot.join_meeting(meet_url)
-            if not joined:
-                display_status("❌ Failed to join the meeting", "error")
-                return False
+            # joined = st.session_state.meet_bot.join_meeting(meet_url)
+            # if not joined:
+            #     display_status("❌ Failed to join the meeting", "error")
+            #     return False
 
             display_status("✅ Successfully joined the meeting!", "success")
 
@@ -79,7 +109,12 @@ def start_recording(meet_url: str):
             display_status("🎙️ Recording started!", "success")
 
             # Start transcription in background
-            threading.Thread(target=background_transcription, daemon=True).start()
+            transcription_thread = threading.Thread(
+                target=background_transcription, daemon=True
+            )
+            add_script_run_ctx(transcription_thread)
+            transcription_thread.start()
+
             return True
 
     except Exception as e:
@@ -89,51 +124,68 @@ def start_recording(meet_url: str):
 
 def background_transcription():
     """Background function for real-time transcription"""
-
     try:
         st.session_state.transcription_active = True
 
-        while st.session_state.recording_active:
-            if not st.session_state.recording_active:
-                break
-
-            time.sleep(2)  # Process every 2 seconds
-
-            # Get audio chunk
-            audio_chunk = st.session_state.audio_recorder.get_audio_chunk()
-            if not audio_chunk:
-                continue
+        while (
+            st.session_state.recording_active
+            or not st.session_state.audio_recorder.is_queue_empty()
+        ):
+            try:
+                # Get audio chunk
+                audio_chunk = st.session_state.audio_recorder.get_audio_chunk()
+                if audio_chunk is None:
+                    continue
 
                 # Transcribe audio chunk
-            transcription = st.session_state.transcriber.transcribe_chunk(audio_chunk)
-            if not transcription:
-                continue
+                transcription = st.session_state.transcriber.transcribe_chunk(
+                    audio_chunk
+                )
+                if not transcription:
+                    continue
 
-            # Update transcription text
-            timestamp = datetime.now().strftime("%H:%M:%S")
-            new_text = f"[{timestamp}] {transcription}\n"
-            st.session_state.transcription_text += new_text
+                # Store transcription text
+                timestamp = datetime.now().strftime("%H:%M:%S")
+                new_entry = {"timestamp": timestamp, "text": transcription}
 
-            # Force Streamlit to update
-            st.rerun()
+                # Create new list to trigger Streamlit reactivity
+                current_transcription = st.session_state.transcription.copy()
+                current_transcription.append(new_entry)
+                st.session_state.transcription = current_transcription
+
+                st.rerun()
+            finally:
+                time.sleep(2)
+
     except Exception as e:
         st.error(f"Transcription error: {str(e)}")
     finally:
         st.session_state.transcription_active = False
+        st.rerun()
 
 
 def stop_recording():
     """Stop the recording process"""
+    global transcription_thread
+
     try:
         st.session_state.recording_active = False
+        start_time = st.session_state.audio_recorder.start_time
+
         audio_file = st.session_state.audio_recorder.stop_recording()
-        st.session_state.meet_bot.leave_meeting()
+        # st.session_state.meet_bot.leave_meeting()
+
+        # Wait for transcription thread to finish
+        if transcription_thread and transcription_thread.is_alive():
+            transcription_thread.join(timeout=15)
+            transcription_thread = None
 
         # Save meeting to history
         meeting_data = {
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "transcription": st.session_state.transcription_text,
-            "audio_file": audio_file if "audio_file" in locals() else None,
+            "start_time": start_time,
+            "end_time": time.time(),
+            "transcription": st.session_state.transcription.copy(),
+            "audio_file": audio_file,
         }
         st.session_state.meeting_history.append(meeting_data)
 
@@ -208,10 +260,14 @@ def main():
         st.subheader("📚 Meeting History")
         if st.session_state.meeting_history:
             for i, meeting in enumerate(st.session_state.meeting_history):
-                with st.expander(f"Meeting {i+1} - {meeting['timestamp']}"):
+                timestamp = datetime.fromtimestamp(meeting["end_time"]).strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                )
+                duration = meeting["end_time"] - meeting["start_time"]
+                with st.expander(f"Meeting {i+1} - {timestamp} ({duration:.2f}s)"):
                     st.text_area(
                         "Transcription",
-                        value=meeting["transcription"],
+                        value=get_transcription_text(meeting["transcription"]),
                         height=200,
                         key=f"history_{i}",
                     )
@@ -225,20 +281,92 @@ def main():
         st.header("📝 Live Transcription")
 
         # Real-time transcription display
-        if st.session_state.transcription_text:
-            st.markdown(st.session_state.transcription_text)
+        if st.session_state.transcription and len(st.session_state.transcription) > 0:
+            transcription_text = get_transcription_text(timestamp=True)
+            if transcription_text.strip():
+                st.markdown(transcription_text)
+            else:
+                st.info("Transcription in progress... Please wait")
+
+            # Summarize transcription
+            def generate_summary():
+                with st.spinner("🤖 Generating summary with AI..."):
+                    st.session_state.current_summary = (
+                        st.session_state.summarizer.summarize_transcription(
+                            st.session_state.transcription
+                        )
+                    )
+
+            if st.button(label="Summarize", icon="🤖", use_container_width=True):
+                generate_summary()
+                st.rerun()
+
+            # Display summary if available
+            if st.session_state.current_summary:
+                st.subheader("📋 Meeting Summary")
+
+                summary_data = st.session_state.current_summary
+
+                if summary_data.get("summary"):
+                    st.markdown("### 📝 Summary")
+                    st.markdown(summary_data["summary"])
+
+                if summary_data.get("key_takeaways"):
+                    st.markdown("### 🔑 Key Takeaways")
+                    st.markdown(summary_data["key_takeaways"])
+
+                if summary_data.get("action_items"):
+                    st.markdown("### ✅ Action Items")
+                    st.markdown(summary_data["action_items"])
+
+                # Add a button to clear the summary
+                if st.button("Clear Summary", icon="🗑️", key="clear_summary"):
+                    st.session_state.current_summary = None
+                    st.rerun()
+
+            # Download transcription and summary
+            def get_combined_content():
+                content = f"# Meeting Transcription\n"
+                content += f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+
+                # Add transcription
+                content += "## Transcription\n"
+                content += get_transcription_text()
+
+                # Add summary if available
+                if st.session_state.current_summary:
+                    content += "\n\n## AI-Generated Summary\n"
+                    summary_data = st.session_state.current_summary
+
+                    if summary_data.get("summary"):
+                        content += "\n### Summary\n"
+                        content += summary_data["summary"]
+
+                    if summary_data.get("key_takeaways"):
+                        content += "\n\n### Key Takeaways\n"
+                        content += summary_data["key_takeaways"]
+
+                    if summary_data.get("action_items"):
+                        content += "\n\n### Action Items\n"
+                        content += summary_data["action_items"]
+
+                return content
+
+            st.download_button(
+                label="Save Transcription & Summary",
+                icon="💾",
+                data=get_combined_content(),
+                file_name=f"meeting_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
+                mime="text/markdown",
+                use_container_width=True,
+            )
+        elif st.session_state.recording_active:
+            st.info("🎙️ Recording active... Waiting for transcription to begin...")
+            # Auto-refresh every few seconds during active recording
+            time.sleep(3)
+            st.rerun()
         else:
             st.info("Start recording to see live transcription here...")
-
-        # Download transcription
-        if st.session_state.transcription_text:
-            st.download_button(
-                label="Save",
-                icon="💾",
-                data=st.session_state.transcription_text,
-                file_name=f"transcription_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
-                mime="text/plain",
-            )
 
     with col2:
         st.header("📊 Stats")
@@ -246,21 +374,23 @@ def main():
         # Show transcriber loading status
         if st.session_state.transcriber.is_loading:
             st.info("🔄 Loading transcriber model...")
+            # Auto-refresh while loading to update status
+            time.sleep(2)
+            st.rerun()
         elif not st.session_state.transcriber.is_loaded:
             st.warning("⚠️ Transcriber not ready")
 
         if st.session_state.recording_active:
-            # Live recording duration
             duration = st.session_state.audio_recorder.get_recording_duration()
             st.metric("Recording Duration", str(timedelta(seconds=duration)))
 
             # Estimate word count from transcription
-            word_count = (
-                len(st.session_state.transcription_text.split())
-                if st.session_state.transcription_text
-                else 0
-            )
-            st.metric("Words Transcribed", str(word_count))
+            word_count = len(get_transcription_text().split())
+            st.metric("Words Transcribed", word_count)
+
+            # Auto-refresh stats during recording
+            time.sleep(2)
+            st.rerun()
         else:
             st.info("Start recording to see stats")
 

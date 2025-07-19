@@ -51,7 +51,7 @@ class AudioRecorder:
             # Start recording stream - changed to InputStream for recording
             with sd.InputStream(
                 # device=sd.default.device[1],
-                # channels=2,
+                channels=1,  # Force mono recording
                 samplerate=SAMPLE_RATE,
                 callback=self._audio_callback,
                 blocksize=self.chunk_size,
@@ -104,6 +104,7 @@ class AudioRecorder:
             # Wait for recording thread to finish
             if self.recording_thread and self.recording_thread.is_alive():
                 self.recording_thread.join(timeout=5.0)
+                self.recording_thread = None
 
             # Save audio data to file
             if not self.audio_data or not self.output_file:
@@ -119,10 +120,7 @@ class AudioRecorder:
                 f"Recording saved: {self.output_file} (duration: {self.get_recording_duration():.2f}s)"
             )
 
-            # Clear audio queue
-            self.audio_data = []
-            while not self.audio_queue.empty():
-                self.audio_queue.get_nowait()
+            self.cleanup()
 
             return self.output_file
 
@@ -130,13 +128,10 @@ class AudioRecorder:
             logger.error(f"Error stopping recording: {str(e)}")
             return None
 
-    def get_audio_chunk(self) -> Optional[np.ndarray]:
-        """
-        Get the next audio chunk for real-time processing
+    def is_queue_empty(self) -> bool:
+        return self.audio_queue.qsize() == 0
 
-        Returns:
-            np.ndarray: Audio chunk, or None if no data available
-        """
+    def get_audio_chunk(self) -> Optional[np.ndarray]:
         try:
             return self.audio_queue.get_nowait()
         except Exception as e:
@@ -145,12 +140,17 @@ class AudioRecorder:
             return None
 
     def get_recording_duration(self) -> float:
-        """
-        Get current recording duration in seconds
+        return time.time() - self.start_time if self.start_time else 0.0
 
-        Returns:
-            float: Duration in seconds
-        """
-        if self.start_time and self.is_recording:
-            return time.time() - self.start_time
-        return 0.0
+    def cleanup(self):
+        """Cleanup"""
+
+        # Clear audio queue
+        self.audio_data = []
+        while not self.audio_queue.empty():
+            self.audio_queue.get_nowait()
+
+        # TODO: maybe clear thread here?
+
+    def __del__(self):
+        self.cleanup()

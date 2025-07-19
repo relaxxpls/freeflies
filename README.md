@@ -7,6 +7,7 @@ A Streamlit application that automatically joins Google Meet sessions, records a
 - 🎙️ **Automated Meeting Join**: Uses Playwright to automatically join Google Meet sessions
 - 🎵 **Audio Recording**: Records system audio or microphone input during meetings
 - 📝 **Real-time Transcription**: Transcribes audio in real-time using OpenAI Whisper
+- 🛡️ **Voice Activity Detection**: Prevents hallucination by filtering silence and background noise
 - 🌐 **Web Interface**: Beautiful Streamlit dashboard for control and monitoring
 - 💾 **Meeting History**: Saves recordings and transcriptions for future reference
 - 🔄 **Streaming Display**: Shows transcription as it happens
@@ -82,6 +83,13 @@ export WHISPER_MODEL_SIZE=base  # tiny, base, small, medium, large
 export WHISPER_LANGUAGE=en
 export WHISPER_DEVICE=auto      # auto, cpu, cuda, mps
 
+# Voice Activity Detection (VAD) settings - prevents hallucination
+export VAD_ENERGY_THRESHOLD=0.01        # Minimum energy for speech detection
+export VAD_SILENCE_THRESHOLD=0.5        # Maximum allowed silence percentage
+export VAD_MIN_SPEECH_DURATION=0.5      # Minimum speech duration (seconds)
+export VAD_MAX_REPETITION_RATIO=0.3     # Maximum word repetition ratio
+export VAD_MIN_AUDIO_LENGTH=2.0         # Minimum audio length to process
+
 # Playwright settings
 export PLAYWRIGHT_HEADLESS=false
 export PLAYWRIGHT_TIMEOUT=30000
@@ -124,8 +132,52 @@ freeflies/
 
 1. **Meeting Join**: The `MeetBot` class uses Playwright to automate browser interactions and join Google Meet sessions
 2. **Audio Recording**: The `AudioRecorder` class captures system audio or microphone input in real-time
-3. **Transcription**: The `Transcriber` class processes audio chunks using OpenAI Whisper and returns text
-4. **Streaming**: The Streamlit app displays transcription results in real-time as they're generated
+3. **Voice Activity Detection**: Audio chunks are analyzed for speech content before transcription
+4. **Transcription**: The `Transcriber` class processes audio chunks using OpenAI Whisper and returns text
+5. **Streaming**: The Streamlit app displays transcription results in real-time as they're generated
+
+## Voice Activity Detection (VAD)
+
+This application includes advanced voice activity detection to prevent transcription hallucination - a common issue where AI models generate repetitive or nonsensical text when processing silence or background noise.
+
+### How VAD Works
+
+The system analyzes each audio chunk using multiple criteria:
+
+- **Energy Analysis**: Measures the audio's RMS energy to detect sufficient volume
+- **Zero Crossing Rate**: Analyzes frequency content to distinguish speech from noise
+- **Silence Detection**: Calculates the percentage of silence in the audio chunk
+- **Spectral Analysis**: Examines frequency distribution to identify speech patterns
+- **Repetition Detection**: Filters out transcriptions with excessive word repetition
+
+### Troubleshooting Transcription Issues
+
+If you experience poor transcription quality, try adjusting these VAD parameters:
+
+**For noisy environments** (too much transcription of background noise):
+```bash
+export VAD_ENERGY_THRESHOLD=0.02    # Higher threshold
+export VAD_SILENCE_THRESHOLD=0.3    # Less silence allowed
+```
+
+**For quiet environments** (missing quiet speech):
+```bash
+export VAD_ENERGY_THRESHOLD=0.005   # Lower threshold
+export VAD_MIN_SPEECH_DURATION=0.3  # Shorter speech duration required
+```
+
+**For repetitive hallucinations**:
+```bash
+export VAD_MAX_REPETITION_RATIO=0.2 # Stricter repetition filtering
+export VAD_MIN_AUDIO_LENGTH=3.0     # Longer audio chunks
+```
+
+### Common Hallucination Patterns Detected
+
+The system automatically detects and filters out common hallucination patterns:
+- Excessive repetition (e.g., "Okay okay okay okay...")
+- Filler phrases (e.g., "Thank you for watching", "I'm sorry")
+- Repeated short words (e.g., "um um um", "uh uh uh")
 
 ## Alternatives to Playwright
 

@@ -128,3 +128,6 @@ class MeetBot:
             self.sb = None
 
         logger.info("Cleanup completed")
+
+    def __del__(self):
+        self.cleanup()
