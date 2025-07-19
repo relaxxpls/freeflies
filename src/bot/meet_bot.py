@@ -1,13 +1,10 @@
-import asyncio
+from contextlib import _GeneratorContextManager
 from typing import Optional
-import mycdp
-from seleniumbase import cdp_driver
+from seleniumbase import SB, BaseCase
 import logging
 
-from seleniumbase.undetected.cdp_driver.browser import Browser
-from seleniumbase.undetected.cdp_driver.tab import Tab
-from .config import BROWSER_PATH, EMAIL, PASSWORD
-from .utils import xpath_button_aria_label, xpath_button_text, sleep
+from .config import BROWSER_PATH, EMAIL, GOOGLE_URL, PASSWORD
+from .utils import xpath_button_aria_label, xpath_button_text
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -17,28 +14,28 @@ class MeetBot:
     """MeetBot class for interacting with Google Meet"""
 
     is_joined = False
-    browser: Optional[Browser] = None
-    page: Optional[Tab] = None
+    sb: Optional[BaseCase] = None
+    context: Optional[_GeneratorContextManager[BaseCase]] = None
 
     def join_meeting(self, meet_url: str) -> bool:
         """Join a meeting synchronously"""
         try:
             logger.info(f"Joining meeting at {meet_url}")
-            asyncio.run(self._join_meeting_async(meet_url))
+            self._join_meeting(meet_url)
             self.is_joined = True
             logger.info("Successfully joined meeting")
 
             return True
         except Exception as e:
             logger.error(f"Error joining meeting:", e)
-            asyncio.run(self.cleanup())
+            self.cleanup()
             return False
 
     def leave_meeting(self) -> bool:
         """Leave a meeting"""
         try:
             logger.info("Leaving meeting")
-            asyncio.run(self._leave_meeting_async())
+            self._leave_meeting()
             self.is_joined = False
             logger.info("Successfully left meeting")
 
@@ -47,120 +44,91 @@ class MeetBot:
             logger.error(f"Error leaving meeting:", e)
             return False
 
-    async def _setup_browser(self):
+    def _setup_browser(self):
         """Setup browser and context and logs in if needed"""
 
-        self.browser = await cdp_driver.start_async(
-            headless=False,
-            browser_executable_path=BROWSER_PATH,
-            browser_args=[
-                "--user-data-dir=./.temp/user_data",
-                "--auto-accept-camera-and-microphone-capture",
-            ],
+        self.context = SB(
+            # test=True,
+            # headless=True,
+            chromium_arg="--auto-accept-camera-and-microphone-capture",
+            disable_features="VizDisplayCompositor",
+            undetectable=True,
+            user_data_dir="./.temp/user_data",
+            binary_location=BROWSER_PATH,
         )
-        await self.browser.grant_permissions(["audioCapture"])
+        self.sb = self.context.__enter__()
 
-        GOOGLE_URL = "https://accounts.google.com/ServiceLogin?ltmpl=meet&continue=https://meet.google.com?hs=193&ec=wgc-meet-hero-signin"
-        self.page = await self.browser.get(GOOGLE_URL)
-        await sleep(5)
+        self.sb.activate_cdp_mode(GOOGLE_URL)
+        self.sb.cdp.grant_permissions(["audioCapture"])
+        self.sb.sleep(5)
 
         if not self._is_logged_in():
-            await self._login()
+            self._login()
 
         assert self._is_logged_in()
 
-    async def _login(self):
+    def _login(self):
         """Login to Google"""
 
-        assert self.page is not None
+        assert self.sb is not None
 
-        email_input = await self.page.select("#identifierId")
-        await email_input.send_keys_async(EMAIL)
-        await sleep(2)
-        next_input = await self.page.select("#identifierNext button")
-        await next_input.click_async()
-        await sleep(5)
+        self.sb.type("#identifierId", EMAIL, timeout=30)
+        self.sb.click("#identifierNext", delay=2)
+        self.sb.sleep(5)
 
-        password_input = await self.page.select('input[name="Passwd"]')
-        await password_input.send_keys_async(PASSWORD)
-        await sleep(2)
-        next_input = await self.page.select("#passwordNext button")
-        await next_input.click_async()
-        await sleep(10)
+        self.sb.type('#password input[type="password"]', PASSWORD, timeout=30)
+        self.sb.click("#passwordNext", delay=2)
+        self.sb.sleep(5)
 
         logger.info("Google login activity: Done")
 
     def _is_logged_in(self) -> bool:
         """Check if user is logged in"""
-        is_logged_in = (
-            self.page is not None
-            and isinstance(self.page.url, str)
-            and "https://meet.google.com" in self.page.url
-        )
-        print("self.page.url", self.page.url)
-        # assert self.page
-        # print("self.page.url", self.page.target)
-        # print("self.", self.page.target.url)
-        # print("IS LOGGED IN", is_logged_in)
-        # is_logged_in = True
+        if self.sb is None:
+            return False
 
-        return is_logged_in
+        title = self.sb.get_title()
+        print("TITLE", title)
+        return isinstance(title, str) and "Google Workspace" not in title
 
-    async def _join_meeting_async(self, meet_url: str):
+    def _join_meeting(self, meet_url: str):
         """Login and join a meeting asynchronously"""
 
-        if self.page is None:
-            await self._setup_browser()
-            assert self.page is not None
+        if self.sb is None:
+            self._setup_browser()
+            assert self.sb is not None
 
-        self.page = await self.page.get(meet_url)
-        await sleep(5)
+        self.sb.open(meet_url)
+        self.sb.sleep(5)
 
-        continue_button = await self.page.find_element_by_text(
-            xpath_button_text(
-                [
-                    "Continue without microphone and camera",
-                    "Continue without camera",
-                    "Continue without microphone",
-                ]
-            ),
-            # timeout=30,
+        self.sb.click(
+            xpath_button_text(["Continue without camera"]), timeout=30, delay=2
         )
-        print("CONTINUE BUTTON", continue_button)
-        if continue_button:
-            await continue_button.click_async()
-
-        await sleep(5)
-
-        button = await self.page.select(xpath_button_text(["Ask to join", "Join now"]))
-        await button.click_async()
+        self.sb.click(
+            xpath_button_text(["Ask to join", "Join now"]), timeout=30, delay=2
+        )
 
         logger.info("Waiting to join meeting...")
 
         # ? wait till leave button is visible
-        await self.page.wait_for(xpath_button_aria_label("Leave call"), timeout=180)
+        self.sb.wait_for_element(xpath_button_aria_label("Leave call"), timeout=180)
 
         logger.info("Successfully joined meeting")
 
-    async def _leave_meeting_async(self):
-        """Leave a meeting asynchronously"""
+    def _leave_meeting(self):
+        """Leave a meeting"""
 
-        assert self.page is not None
-        # aria-label="Leave call"
-        leave_button = await self.page.select('button:has(aria-label="Leave call")')
-        await leave_button.click_async()
+        assert self.sb is not None
+        self.sb.click(xpath_button_aria_label("Leave call"), timeout=180, delay=2)
 
-        await self.cleanup()
+        self.cleanup()
 
-    async def cleanup(self):
+    def cleanup(self):
         """Cleanup"""
 
-        if self.page:
-            await self.page.close()
-            self.page = None
-
-        if self.browser:
-            self.browser.stop()
-            self.browser = None
+        if self.context:
+            self.context.__exit__(None, None, None)
+            self.context = None
+            self.sb = None
 
         logger.info("Cleanup completed")

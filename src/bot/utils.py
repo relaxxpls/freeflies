@@ -10,7 +10,3 @@ def xpath_button_text(text: str | list[str]):
 
 
 xpath_button_aria_label = lambda label: f'//button[@aria-label="{label}"]'
-
-
-async def sleep(seconds: int = 5):
-    return await asyncio.sleep(seconds + randint(0, 1))
