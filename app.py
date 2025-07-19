@@ -171,25 +171,27 @@ def main():
         # Recording controls
         st.subheader("🎙️ Recording")
 
-        col1, col2 = st.columns(2)
-
-        with col1:
-            if st.button(
-                "▶️ Start Recording",
-                disabled=not url_valid or st.session_state.recording_active,
-                type="primary",
-            ):
-                if start_recording(meet_url):
-                    st.rerun()
-
-        with col2:
-            if st.button(
-                "⏹️ Stop Recording",
-                disabled=not st.session_state.recording_active,
-                type="secondary",
-            ):
-                if stop_recording():
-                    st.rerun()
+        if url_valid:
+            if st.session_state.recording_active:
+                if st.button(
+                    "Stop Recording",
+                    disabled=not st.session_state.recording_active,
+                    type="secondary",
+                    icon="⏹️",
+                    use_container_width=True,
+                ):
+                    if stop_recording():
+                        st.rerun()
+            else:
+                if st.button(
+                    "Start Recording",
+                    disabled=not url_valid or st.session_state.recording_active,
+                    type="primary",
+                    icon="▶️",
+                    use_container_width=True,
+                ):
+                    if start_recording(meet_url):
+                        st.rerun()
 
         # Status indicator
         if st.session_state.recording_active:

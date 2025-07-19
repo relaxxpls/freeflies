@@ -1,17 +1,14 @@
 import asyncio
-import os
 from typing import Optional
-from playwright.async_api import (
-    async_playwright,
-    Browser,
-    BrowserContext,
-    Page,
-    Playwright,
-)
+import mycdp
+from seleniumbase import cdp_driver
 import logging
-from dotenv import load_dotenv
 
-load_dotenv()
+from seleniumbase.undetected.cdp_driver.browser import Browser
+from seleniumbase.undetected.cdp_driver.tab import Tab
+from .config import BROWSER_PATH, EMAIL, PASSWORD
+from .utils import xpath_button_aria_label, xpath_button_text, sleep
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -21,63 +18,93 @@ class MeetBot:
 
     is_joined = False
     browser: Optional[Browser] = None
-    context: Optional[BrowserContext] = None
-    page: Optional[Page] = None
-    playwright: Optional[Playwright] = None
+    page: Optional[Tab] = None
+
+    def join_meeting(self, meet_url: str) -> bool:
+        """Join a meeting synchronously"""
+        try:
+            logger.info(f"Joining meeting at {meet_url}")
+            asyncio.run(self._join_meeting_async(meet_url))
+            self.is_joined = True
+            logger.info("Successfully joined meeting")
+
+            return True
+        except Exception as e:
+            logger.error(f"Error joining meeting:", e)
+            asyncio.run(self.cleanup())
+            return False
+
+    def leave_meeting(self) -> bool:
+        """Leave a meeting"""
+        try:
+            logger.info("Leaving meeting")
+            asyncio.run(self._leave_meeting_async())
+            self.is_joined = False
+            logger.info("Successfully left meeting")
+
+            return True
+        except Exception as e:
+            logger.error(f"Error leaving meeting:", e)
+            return False
 
     async def _setup_browser(self):
-        """Initialize browser and context"""
-        self.playwright = await async_playwright().start()
-        self.browser = await self.playwright.chromium.launch(
-            headless=False,  # Set to True for production
-            args=[
-                "--use-fake-ui-for-media-stream",  # Allow microphone access
-                "--use-fake-device-for-media-stream",  # Use fake camera/mic
-                "--disable-web-security",  # Disable some security features
-                "--allow-running-insecure-content",  # Allow mixed content
-                "--disable-features=VizDisplayCompositor",  # Improve performance
-                "--no-sandbox",  # Needed for some environments
-                "--disable-dev-shm-usage",  # Overcome limited resource problems
+        """Setup browser and context and logs in if needed"""
+
+        self.browser = await cdp_driver.start_async(
+            headless=False,
+            browser_executable_path=BROWSER_PATH,
+            browser_args=[
+                "--user-data-dir=./.temp/user_data",
+                "--auto-accept-camera-and-microphone-capture",
             ],
         )
-        self.context = await self.browser.new_context(
-            permissions=["microphone", "camera"],
-            # viewport={"width": 1280, "height": 720},
-        )
-        self.page = await self.context.new_page()
+        await self.browser.grant_permissions(["audioCapture"])
 
-        user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        await self.page.set_extra_http_headers({"User-Agent": user_agent})
+        GOOGLE_URL = "https://accounts.google.com/ServiceLogin?ltmpl=meet&continue=https://meet.google.com?hs=193&ec=wgc-meet-hero-signin"
+        self.page = await self.browser.get(GOOGLE_URL)
+        await sleep(5)
+
+        if not self._is_logged_in():
+            await self._login()
+
+        assert self._is_logged_in()
 
     async def _login(self):
         """Login to Google"""
 
-        if self.page is None:
-            await self._setup_browser()
-            assert self.page is not None
+        assert self.page is not None
 
-        GMEET_URL = "https://accounts.google.com/ServiceLogin?ltmpl=meet&continue=https://meet.google.com?hs=193&ec=wgc-meet-hero-signin"
-        EMAIL = os.getenv("GOOGLE_EMAIL")
-        PASSWORD = os.getenv("GOOGLE_PASSWORD")
+        email_input = await self.page.select("#identifierId")
+        await email_input.send_keys_async(EMAIL)
+        await sleep(2)
+        next_input = await self.page.select("#identifierNext button")
+        await next_input.click_async()
+        await sleep(5)
 
-        if not EMAIL or not PASSWORD:
-            raise ValueError(
-                "GOOGLE_EMAIL and GOOGLE_PASSWORD environment variables must be set"
-            )
-
-        await self.page.goto(GMEET_URL)
-
-        # Enter email
-        await self.page.fill("#identifierId", EMAIL)
-        await self.page.click("#identifierNext")
-        await self.page.wait_for_selector("#password", timeout=10000)
-
-        # Enter password
-        await self.page.fill('#password input[type="password"]', PASSWORD)
-        await self.page.click("#passwordNext")
-        await self.page.wait_for_load_state("networkidle")
+        password_input = await self.page.select('input[name="Passwd"]')
+        await password_input.send_keys_async(PASSWORD)
+        await sleep(2)
+        next_input = await self.page.select("#passwordNext button")
+        await next_input.click_async()
+        await sleep(10)
 
         logger.info("Google login activity: Done")
+
+    def _is_logged_in(self) -> bool:
+        """Check if user is logged in"""
+        is_logged_in = (
+            self.page is not None
+            and isinstance(self.page.url, str)
+            and "https://meet.google.com" in self.page.url
+        )
+        print("self.page.url", self.page.url)
+        # assert self.page
+        # print("self.page.url", self.page.target)
+        # print("self.", self.page.target.url)
+        # print("IS LOGGED IN", is_logged_in)
+        # is_logged_in = True
+
+        return is_logged_in
 
     async def _join_meeting_async(self, meet_url: str):
         """Login and join a meeting asynchronously"""
@@ -86,43 +113,54 @@ class MeetBot:
             await self._setup_browser()
             assert self.page is not None
 
-        await self._login()
+        self.page = await self.page.get(meet_url)
+        await sleep(5)
 
-        await self.page.goto(meet_url)
-        button = await self.page.query_selector('button:has(span:text("Ask to join"))')
-        if button:
-            await button.wait_for_element_state("visible")
-            await button.click()
-        else:
-            raise Exception("Button not found")
+        continue_button = await self.page.find_element_by_text(
+            xpath_button_text(
+                [
+                    "Continue without microphone and camera",
+                    "Continue without camera",
+                    "Continue without microphone",
+                ]
+            ),
+            # timeout=30,
+        )
+        print("CONTINUE BUTTON", continue_button)
+        if continue_button:
+            await continue_button.click_async()
 
-        await self.page.wait_for_load_state("networkidle")
+        await sleep(5)
+
+        button = await self.page.select(xpath_button_text(["Ask to join", "Join now"]))
+        await button.click_async()
+
+        logger.info("Waiting to join meeting...")
+
+        # ? wait till leave button is visible
+        await self.page.wait_for(xpath_button_aria_label("Leave call"), timeout=180)
+
         logger.info("Successfully joined meeting")
 
-    def join_meeting(self, meet_url: str) -> bool:
-        """Join a meeting synchronously"""
-        try:
-            logger.info(f"Joining meeting at {meet_url}")
+    async def _leave_meeting_async(self):
+        """Leave a meeting asynchronously"""
 
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(self._join_meeting_async(meet_url))
-            self.is_joined = True
-            logger.info("Successfully joined meeting")
+        assert self.page is not None
+        # aria-label="Leave call"
+        leave_button = await self.page.select('button:has(aria-label="Leave call")')
+        await leave_button.click_async()
 
-            return True
-        except Exception as e:
-            logger.error(f"Error joining meeting: {str(e)}")
-            return False
+        await self.cleanup()
 
-    def leave_meeting(self) -> bool:
-        """Leave a meeting"""
-        logger.info("Leaving meeting")
-        self.is_joined = False
-        logger.info("Successfully left meeting")
-        return True
-
-    def cleanup(self):
+    async def cleanup(self):
         """Cleanup"""
+
+        if self.page:
+            await self.page.close()
+            self.page = None
+
+        if self.browser:
+            self.browser.stop()
+            self.browser = None
+
         logger.info("Cleanup completed")
-        pass
