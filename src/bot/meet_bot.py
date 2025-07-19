@@ -35,7 +35,9 @@ class MeetBot:
         """Leave a meeting"""
         try:
             logger.info("Leaving meeting")
-            self._leave_meeting()
+            assert self.sb is not None
+            self.sb.click(xpath_button_aria_label("Leave call"), timeout=180, delay=2)
+            self.cleanup()
             self.is_joined = False
             logger.info("Successfully left meeting")
 
@@ -59,7 +61,7 @@ class MeetBot:
         self.sb = self.context.__enter__()
 
         self.sb.activate_cdp_mode(GOOGLE_URL)
-        self.sb.cdp.grant_permissions(["audioCapture"])
+        # self.sb.cdp.grant_permissions(["audioCapture"])
         self.sb.sleep(5)
 
         requires_login = not self._is_logged_in()
@@ -102,12 +104,13 @@ class MeetBot:
         self.sb.sleep(5)
 
         if requires_login:
-            self.sb.click(
-                xpath_button_text(["Continue without camera"]), timeout=30, delay=2
+            continue_xpath = xpath_button_text(
+                ["Continue without camera", "Continue without camera and microphone"]
             )
-        self.sb.click(
-            xpath_button_text(["Ask to join", "Join now"]), timeout=30, delay=2
-        )
+            self.sb.click(continue_xpath, timeout=30, delay=2)
+
+        join_xpath = xpath_button_text(["Ask to join", "Join now"])
+        self.sb.click(join_xpath, timeout=30, delay=2)
 
         logger.info("Waiting to join meeting...")
 
@@ -115,14 +118,6 @@ class MeetBot:
         self.sb.wait_for_element(xpath_button_aria_label("Leave call"), timeout=180)
 
         logger.info("Successfully joined meeting")
-
-    def _leave_meeting(self):
-        """Leave a meeting"""
-
-        assert self.sb is not None
-        self.sb.click(xpath_button_aria_label("Leave call"), timeout=180, delay=2)
-
-        self.cleanup()
 
     def cleanup(self):
         """Cleanup"""

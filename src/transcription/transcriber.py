@@ -1,9 +1,10 @@
-import whisper
 import numpy as np
 import torch
 import logging
 import threading
-from typing import Optional, Generator
+from typing import Optional, Generator, Any
+from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
+from transformers.pipelines import pipeline
 from ..config import DEVICE, SAMPLE_RATE
 
 # Configure logging
@@ -13,20 +14,21 @@ logger = logging.getLogger(__name__)
 
 class Transcriber:
     """
-    Transcriber class for converting audio to text using OpenAI Whisper.
+    Transcriber class for converting audio to text using HuggingFace Transformers
 
     This class handles:
-    - Real-time audio transcription
-    - Streaming transcription results
-    - Multiple Whisper model sizes
+    - Real-time audio transcription using HuggingFace models
+    - Multiple HuggingFace ASR model options
     - Language detection and translation
     """
 
     # Model settings
-    model_size: str = "base"
+    model_name: str = "openai/whisper-base"  # or "openai/whisper-large-v3"
     language: str = "en"
-    device: str
-    model: Optional[whisper.Whisper] = None
+    pipeline: Optional[Any] = None
+    processor: Optional[Any] = None
+    model: Optional[Any] = None
+
     is_loading: bool = False
     is_loaded: bool = False
 
@@ -40,16 +42,36 @@ class Transcriber:
 
         try:
             self.is_loading = True
-            logger.info(f"Loading Whisper model: {self.model_size} on device: {DEVICE}")
+            logger.info(
+                f"Loading HuggingFace model: {self.model_name} on device: {DEVICE}"
+            )
 
             # Load model in a separate thread to avoid blocking
             def load_worker():
                 try:
-                    self.model = whisper.load_model(self.model_size, device=DEVICE)
+                    # Initialize HuggingFace ASR pipeline
+                    self.pipeline = pipeline(
+                        "automatic-speech-recognition",
+                        model=self.model_name,
+                        device=DEVICE,
+                        torch_dtype=torch.float16,
+                    )
+
+                    # Also load processor and model separately for more control
+                    self.processor = AutoProcessor.from_pretrained(self.model_name)
+                    self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
+                        self.model_name,
+                        torch_dtype=torch.float16,
+                        low_cpu_mem_usage=True,
+                        use_safetensors=True,
+                    )
+
+                    self.model.to(DEVICE)  # type: ignore
+
                     self.is_loaded = True
-                    logger.info(f"Whisper model loaded successfully")
+                    logger.info(f"HuggingFace model loaded successfully")
                 except Exception as e:
-                    logger.error(f"Failed to load Whisper model: {str(e)}")
+                    logger.error(f"Failed to load HuggingFace model: {str(e)}")
                 finally:
                     self.is_loading = False
 
@@ -61,7 +83,7 @@ class Transcriber:
             self.is_loading = False
 
     def _prepare_audio(self, audio: np.ndarray) -> np.ndarray:
-        """Prepare audio for Whisper (convert to 16kHz mono)"""
+        """Prepare audio (convert to 16kHz mono)"""
         try:
             # Convert to float32 if needed
             if audio.dtype != np.float32:
@@ -71,10 +93,12 @@ class Transcriber:
             if len(audio.shape) > 1:
                 audio = np.mean(audio, axis=1)
 
-            # ! Resample to 16kHz if needed
+            # Resample to 16kHz if needed (HuggingFace models expect 16kHz)
+            # if SAMPLE_RATE != 16000:
+            #     audio = librosa.resample(audio, orig_sr=SAMPLE_RATE, target_sr=16000)
 
             # Normalize audio
-            audio = audio / np.max(np.abs(audio) + 1e-8)
+            audio = audio / (np.max(np.abs(audio)) + 1e-8)
 
             return audio
 
@@ -83,18 +107,8 @@ class Transcriber:
             return audio
 
     def transcribe_chunk(self, audio_chunk: np.ndarray) -> Optional[str]:
-        """
-        Transcribe a single audio chunk
-
-        Args:
-            audio_chunk: Audio data as numpy array
-            sample_rate: Sample rate of the audio
-
-        Returns:
-            str: Transcribed text, or None if failed
-        """
         try:
-            if not self.model or not self.is_loaded:
+            if not self.pipeline or not self.is_loaded:
                 return None
 
             # Check minimum audio length
@@ -102,16 +116,21 @@ class Transcriber:
             if duration < self.min_audio_length:
                 return None
 
-            # Prepare audio for Whisper
+            # Prepare audio
             audio = self._prepare_audio(audio_chunk)
 
-            # Transcribe
-            result = self.model.transcribe(
-                audio, language=self.language, verbose=False, task="transcribe"
+            # Transcribe using HuggingFace pipeline
+            result = self.pipeline(
+                audio,
+                return_timestamps=False,
+                generate_kwargs={
+                    "language": self.language,
+                    "task": "transcribe",
+                },
             )
 
             text = result["text"]
-            print("text", text)
+            print("text", text)  #  remove
             if not isinstance(text, str):
                 raise Exception("Transcribed text is not a string")
             text = text.strip()
@@ -157,10 +176,21 @@ class Transcriber:
     def cleanup(self):
         """Clean up resources"""
         try:
+            if self.pipeline:
+                del self.pipeline
+                self.pipeline = None
+
             if self.model:
                 del self.model
                 self.model = None
-                torch.cuda.empty_cache()  # Clear GPU memory if using CUDA
+
+            if self.processor:
+                del self.processor
+                self.processor = None
+
+            # Clear GPU memory if using CUDA
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
             self.is_loaded = False
             logger.info("Transcriber cleanup completed")

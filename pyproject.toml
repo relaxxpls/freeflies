@@ -8,7 +8,8 @@ version = "0.1.0"
 
 [tool.poetry.dependencies]
 asyncio = "^3.4.3"
-openai-whisper = "^20250625.0.0"
+langchain = "^0.3.26"
+langchain-core = "^0.3.69"
 pandas = "^2.3.1"
 pillow = "^11.3.0"
 python = "^3.12"
@@ -18,6 +19,8 @@ seleniumbase = "^4.40.6"
 sounddevice = "^0.5.2"
 soundfile = "^0.13.1"
 streamlit = "^1.47.0"
+torch = "^2.7.1"
+transformers = "^4.53.2"
 watchdog = "^6.0.0"
 
 [tool.poetry.group.dev.dependencies]

@@ -1,7 +1,7 @@
 import streamlit as st
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 import re
 
 from src.bot.meet_bot import MeetBot
@@ -21,16 +21,20 @@ def initialize_session_state():
     """Initialize session state variables"""
     if "recording_active" not in st.session_state:
         st.session_state.recording_active = False
+    if "transcription_active" not in st.session_state:
+        st.session_state.transcription_active = False
+
     if "transcription_text" not in st.session_state:
         st.session_state.transcription_text = ""
-    if "meet_bot" not in st.session_state:
-        st.session_state.meet_bot = None
-    if "audio_recorder" not in st.session_state:
-        st.session_state.audio_recorder = None
-    if "transcriber" not in st.session_state:
-        st.session_state.transcriber = None
     if "meeting_history" not in st.session_state:
         st.session_state.meeting_history = []
+
+    if "meet_bot" not in st.session_state:
+        st.session_state.meet_bot = MeetBot()
+    if "audio_recorder" not in st.session_state:
+        st.session_state.audio_recorder = AudioRecorder()
+    if "transcriber" not in st.session_state:
+        st.session_state.transcriber = Transcriber()
 
 
 def validate_meet_url(url: str) -> bool:
@@ -56,33 +60,27 @@ def display_status(message: str, status_type: str = "info"):
 def start_recording(meet_url: str):
     """Start the recording process"""
     try:
-        # Initialize components
-        st.session_state.meet_bot = MeetBot()
-        st.session_state.audio_recorder = AudioRecorder()
-        st.session_state.transcriber = Transcriber()
-
-        # Join the meeting
         with st.spinner("Joining Google Meet..."):
-            if st.session_state.meet_bot.join_meeting(meet_url):
-                display_status("✅ Successfully joined the meeting!", "success")
-
-                # Start recording
-                if st.session_state.audio_recorder.start_recording():
-                    st.session_state.recording_active = True
-                    display_status("🎙️ Recording started!", "success")
-
-                    # Start transcription in background
-                    threading.Thread(
-                        target=background_transcription, daemon=True
-                    ).start()
-
-                    return True
-                else:
-                    display_status("❌ Failed to start recording", "error")
-                    return False
-            else:
+            # Join the meeting
+            joined = st.session_state.meet_bot.join_meeting(meet_url)
+            if not joined:
                 display_status("❌ Failed to join the meeting", "error")
                 return False
+
+            display_status("✅ Successfully joined the meeting!", "success")
+
+            # Start recording
+            started = st.session_state.audio_recorder.start_recording()
+            if not started:
+                display_status("❌ Failed to start recording", "error")
+                return False
+
+            st.session_state.recording_active = True
+            display_status("🎙️ Recording started!", "success")
+
+            # Start transcription in background
+            threading.Thread(target=background_transcription, daemon=True).start()
+            return True
 
     except Exception as e:
         display_status(f"❌ Error: {str(e)}", "error")
@@ -91,43 +89,45 @@ def start_recording(meet_url: str):
 
 def background_transcription():
     """Background function for real-time transcription"""
+
     try:
+        st.session_state.transcription_active = True
+
         while st.session_state.recording_active:
-            if st.session_state.audio_recorder and st.session_state.transcriber:
-                # Get audio chunk
-                audio_chunk = st.session_state.audio_recorder.get_audio_chunk()
+            if not st.session_state.recording_active:
+                break
 
-                if audio_chunk:
-                    # Transcribe audio chunk
-                    transcription = st.session_state.transcriber.transcribe_chunk(
-                        audio_chunk
-                    )
+            time.sleep(2)  # Process every 2 seconds
 
-                    if transcription:
-                        # Update transcription text
-                        timestamp = datetime.now().strftime("%H:%M:%S")
-                        new_text = f"[{timestamp}] {transcription}\n"
-                        st.session_state.transcription_text += new_text
+            # Get audio chunk
+            audio_chunk = st.session_state.audio_recorder.get_audio_chunk()
+            if not audio_chunk:
+                continue
 
-                        # Force Streamlit to update
-                        st.rerun()
+                # Transcribe audio chunk
+            transcription = st.session_state.transcriber.transcribe_chunk(audio_chunk)
+            if not transcription:
+                continue
 
-                time.sleep(2)  # Process every 2 seconds
+            # Update transcription text
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            new_text = f"[{timestamp}] {transcription}\n"
+            st.session_state.transcription_text += new_text
 
+            # Force Streamlit to update
+            st.rerun()
     except Exception as e:
         st.error(f"Transcription error: {str(e)}")
+    finally:
+        st.session_state.transcription_active = False
 
 
 def stop_recording():
     """Stop the recording process"""
     try:
         st.session_state.recording_active = False
-
-        if st.session_state.audio_recorder:
-            audio_file = st.session_state.audio_recorder.stop_recording()
-
-        if st.session_state.meet_bot:
-            st.session_state.meet_bot.leave_meeting()
+        audio_file = st.session_state.audio_recorder.stop_recording()
+        st.session_state.meet_bot.leave_meeting()
 
         # Save meeting to history
         meeting_data = {
@@ -199,6 +199,11 @@ def main():
         else:
             st.info("⚪ Recording Inactive")
 
+        if st.session_state.transcription_active:
+            st.success("🔴 Transcription Active")
+        else:
+            st.info("⚪ Transcription Inactive")
+
         # Meeting history
         st.subheader("📚 Meeting History")
         if st.session_state.meeting_history:
@@ -238,10 +243,24 @@ def main():
     with col2:
         st.header("📊 Stats")
 
+        # Show transcriber loading status
+        if st.session_state.transcriber.is_loading:
+            st.info("🔄 Loading transcriber model...")
+        elif not st.session_state.transcriber.is_loaded:
+            st.warning("⚠️ Transcriber not ready")
+
         if st.session_state.recording_active:
-            # Mock stats for demonstration
-            st.metric("Recording Duration", "05:23")
-            st.metric("Words Transcribed", "342")
+            # Live recording duration
+            duration = st.session_state.audio_recorder.get_recording_duration()
+            st.metric("Recording Duration", str(timedelta(seconds=duration)))
+
+            # Estimate word count from transcription
+            word_count = (
+                len(st.session_state.transcription_text.split())
+                if st.session_state.transcription_text
+                else 0
+            )
+            st.metric("Words Transcribed", str(word_count))
         else:
             st.info("Start recording to see stats")
 
