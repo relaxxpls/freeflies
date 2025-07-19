@@ -3,7 +3,7 @@ from typing import Optional
 from seleniumbase import SB, BaseCase
 import logging
 
-from .config import BROWSER_PATH, EMAIL, GOOGLE_URL, PASSWORD
+from ..config import BROWSER_PATH, GOOGLE_EMAIL, GOOGLE_URL, GOOGLE_PASSWORD
 from .utils import xpath_button_aria_label, xpath_button_text
 
 logging.basicConfig(level=logging.INFO)
@@ -44,12 +44,12 @@ class MeetBot:
             logger.error(f"Error leaving meeting:", e)
             return False
 
-    def _setup_browser(self):
+    def _setup_browser(self) -> bool:
         """Setup browser and context and logs in if needed"""
 
         self.context = SB(
             # test=True,
-            # headless=True,
+            headless=True,
             chromium_arg="--auto-accept-camera-and-microphone-capture",
             disable_features="VizDisplayCompositor",
             undetectable=True,
@@ -62,21 +62,22 @@ class MeetBot:
         self.sb.cdp.grant_permissions(["audioCapture"])
         self.sb.sleep(5)
 
-        if not self._is_logged_in():
+        requires_login = not self._is_logged_in()
+        if requires_login:
             self._login()
-
         assert self._is_logged_in()
+        return requires_login
 
     def _login(self):
         """Login to Google"""
 
         assert self.sb is not None
 
-        self.sb.type("#identifierId", EMAIL, timeout=30)
+        self.sb.type("#identifierId", GOOGLE_EMAIL, timeout=30)
         self.sb.click("#identifierNext", delay=2)
         self.sb.sleep(5)
 
-        self.sb.type('#password input[type="password"]', PASSWORD, timeout=30)
+        self.sb.type('#password input[type="password"]', GOOGLE_PASSWORD, timeout=30)
         self.sb.click("#passwordNext", delay=2)
         self.sb.sleep(5)
 
@@ -88,22 +89,22 @@ class MeetBot:
             return False
 
         title = self.sb.get_title()
-        print("TITLE", title)
         return isinstance(title, str) and "Google Workspace" not in title
 
     def _join_meeting(self, meet_url: str):
         """Login and join a meeting asynchronously"""
 
         if self.sb is None:
-            self._setup_browser()
+            requires_login = self._setup_browser()
             assert self.sb is not None
 
         self.sb.open(meet_url)
         self.sb.sleep(5)
 
-        self.sb.click(
-            xpath_button_text(["Continue without camera"]), timeout=30, delay=2
-        )
+        if requires_login:
+            self.sb.click(
+                xpath_button_text(["Continue without camera"]), timeout=30, delay=2
+            )
         self.sb.click(
             xpath_button_text(["Ask to join", "Join now"]), timeout=30, delay=2
         )

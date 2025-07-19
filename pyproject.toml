@@ -8,13 +8,13 @@ version = "0.1.0"
 
 [tool.poetry.dependencies]
 asyncio = "^3.4.3"
-nodriver = "^0.47.0"
 openai-whisper = "^20250625.0.0"
 pandas = "^2.3.1"
 pillow = "^11.3.0"
 python = "^3.12"
 python-dotenv = "^1.1.1"
 requests = "^2.32.4"
+seleniumbase = "^4.40.6"
 sounddevice = "^0.5.2"
 soundfile = "^0.13.1"
 streamlit = "^1.47.0"
@@ -31,3 +31,4 @@ requires = ["poetry-core"]
 
 [tool.poetry.scripts]
 freeflies = "app:start_streamlit"
+test = "tests.seleniumbase:test"
