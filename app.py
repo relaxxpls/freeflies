@@ -4,13 +4,12 @@ from streamlit.runtime.scriptrunner import add_script_run_ctx
 import threading
 import time
 from datetime import datetime, timedelta
-import re
 import atexit
 
 from src.bot.meet_bot import MeetBot
 from src.recording.audio_recorder import AudioRecorder
-from src.transcription.summarize import Summarizer
-from src.transcription.transcriber import Transcriber
+from src.transcription import TranscriptionEntry, Summarizer, Transcriber
+from src.utils import get_transcription_text, validate_meet_url
 
 # Configure Streamlit page
 st.set_page_config(
@@ -38,9 +37,9 @@ def initialize_session_state():
     if "current_summary" not in st.session_state:
         st.session_state.current_summary = None
 
-    # if "meet_bot" not in st.session_state:
-    #     st.session_state.meet_bot = MeetBot()
-    #     atexit.register(lambda: st.session_state.meet_bot.cleanup())
+    if "meet_bot" not in st.session_state:
+        st.session_state.meet_bot = MeetBot()
+        atexit.register(lambda: st.session_state.meet_bot.cleanup())
     if "audio_recorder" not in st.session_state:
         st.session_state.audio_recorder = AudioRecorder()
         atexit.register(lambda: st.session_state.audio_recorder.cleanup())
@@ -49,17 +48,6 @@ def initialize_session_state():
         atexit.register(lambda: st.session_state.transcriber.cleanup())
     if "summarizer" not in st.session_state:
         st.session_state.summarizer = Summarizer()
-
-
-def validate_meet_url(url: str) -> bool:
-    """Validate if the provided URL is a valid Google Meet URL"""
-    if not url:
-        return False
-
-    format = r"https?://meet\.google\.com/[a-z]{3}-[a-z]{4}-[a-z]{3}\??.*"
-    match = re.fullmatch(format, url)
-
-    return bool(match)
 
 
 def display_status(message: str, status_type: str = "info"):
@@ -71,18 +59,6 @@ def display_status(message: str, status_type: str = "info"):
     )
 
 
-def get_transcription_text(
-    transcription: Optional[list[dict]] = None, timestamp: bool = False
-):
-    if not transcription:
-        transcription = st.session_state.transcription
-    assert isinstance(transcription, list)
-
-    if timestamp:
-        return "\n".join([f"[{t['timestamp']}] {t['text']}" for t in transcription])
-    return " ".join([t["text"] for t in transcription])
-
-
 def start_recording(meet_url: str):
     """Start the recording process"""
     global transcription_thread
@@ -92,10 +68,10 @@ def start_recording(meet_url: str):
 
         with st.spinner("Joining Google Meet..."):
             # Join the meeting
-            # joined = st.session_state.meet_bot.join_meeting(meet_url)
-            # if not joined:
-            #     display_status("❌ Failed to join the meeting", "error")
-            #     return False
+            joined = st.session_state.meet_bot.join_meeting(meet_url)
+            if not joined:
+                display_status("❌ Failed to join the meeting", "error")
+                return False
 
             display_status("✅ Successfully joined the meeting!", "success")
 
@@ -144,13 +120,9 @@ def background_transcription():
                 if not transcription:
                     continue
 
-                # Store transcription text
-                timestamp = datetime.now().strftime("%H:%M:%S")
-                new_entry = {"timestamp": timestamp, "text": transcription}
-
-                # Create new list to trigger Streamlit reactivity
+                # ! Simplify this later
                 current_transcription = st.session_state.transcription.copy()
-                current_transcription.append(new_entry)
+                current_transcription.append(TranscriptionEntry(text=transcription))
                 st.session_state.transcription = current_transcription
 
                 st.rerun()
@@ -173,7 +145,7 @@ def stop_recording():
         start_time = st.session_state.audio_recorder.start_time
 
         audio_file = st.session_state.audio_recorder.stop_recording()
-        # st.session_state.meet_bot.leave_meeting()
+        st.session_state.meet_bot.leave_meeting()
 
         # Wait for transcription thread to finish
         if transcription_thread and transcription_thread.is_alive():
@@ -282,7 +254,9 @@ def main():
 
         # Real-time transcription display
         if st.session_state.transcription and len(st.session_state.transcription) > 0:
-            transcription_text = get_transcription_text(timestamp=True)
+            transcription_text = get_transcription_text(
+                st.session_state.transcription, timestamp=True
+            )
             if transcription_text.strip():
                 st.markdown(transcription_text)
             else:
@@ -307,17 +281,23 @@ def main():
 
                 summary_data = st.session_state.current_summary
 
-                if summary_data.get("summary"):
+                if summary_data.summary:
                     st.markdown("### 📝 Summary")
-                    st.markdown(summary_data["summary"])
+                    st.markdown(summary_data.summary)
 
-                if summary_data.get("key_takeaways"):
+                if summary_data.key_takeaways:
                     st.markdown("### 🔑 Key Takeaways")
-                    st.markdown(summary_data["key_takeaways"])
+                    st.markdown(summary_data.key_takeaways)
 
-                if summary_data.get("action_items"):
+                if summary_data.action_items:
                     st.markdown("### ✅ Action Items")
-                    st.markdown(summary_data["action_items"])
+                    st.markdown(summary_data.action_items)
+
+                # Show metadata
+                if summary_data.word_count:
+                    st.caption(
+                        f"📊 Word count: {summary_data.word_count} | Generated: {summary_data.generated_at.strftime('%Y-%m-%d %H:%M:%S')}"
+                    )
 
                 # Add a button to clear the summary
                 if st.button("Clear Summary", icon="🗑️", key="clear_summary"):
@@ -331,24 +311,28 @@ def main():
 
                 # Add transcription
                 content += "## Transcription\n"
-                content += get_transcription_text()
+                content += get_transcription_text(st.session_state.transcription)
 
                 # Add summary if available
                 if st.session_state.current_summary:
                     content += "\n\n## AI-Generated Summary\n"
                     summary_data = st.session_state.current_summary
 
-                    if summary_data.get("summary"):
+                    if summary_data.summary:
                         content += "\n### Summary\n"
-                        content += summary_data["summary"]
+                        content += summary_data.summary
 
-                    if summary_data.get("key_takeaways"):
+                    if summary_data.key_takeaways:
                         content += "\n\n### Key Takeaways\n"
-                        content += summary_data["key_takeaways"]
+                        content += summary_data.key_takeaways
 
-                    if summary_data.get("action_items"):
+                    if summary_data.action_items:
                         content += "\n\n### Action Items\n"
-                        content += summary_data["action_items"]
+                        content += summary_data.action_items
+
+                    # Add metadata
+                    if summary_data.word_count:
+                        content += f"\n\n---\n*Word count: {summary_data.word_count} | Generated: {summary_data.generated_at.strftime('%Y-%m-%d %H:%M:%S')}*"
 
                 return content
 
@@ -385,7 +369,9 @@ def main():
             st.metric("Recording Duration", str(timedelta(seconds=duration)))
 
             # Estimate word count from transcription
-            word_count = len(get_transcription_text().split())
+            word_count = len(
+                get_transcription_text(st.session_state.transcription).split()
+            )
             st.metric("Words Transcribed", word_count)
 
             # Auto-refresh stats during recording
