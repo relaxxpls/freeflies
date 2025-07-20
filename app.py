@@ -285,13 +285,10 @@ def main():
                     st.markdown("### 📝 Summary")
                     st.markdown(summary_data.summary)
 
-                if summary_data.key_takeaways:
-                    st.markdown("### 🔑 Key Takeaways")
-                    st.markdown(summary_data.key_takeaways)
-
                 if summary_data.action_items:
                     st.markdown("### ✅ Action Items")
-                    st.markdown(summary_data.action_items)
+                    for i, item in enumerate(summary_data.action_items):
+                        st.checkbox(item, key=f"action_item_{i}", value=False)
 
                 # Show metadata
                 if summary_data.word_count:
@@ -322,13 +319,10 @@ def main():
                         content += "\n### Summary\n"
                         content += summary_data.summary
 
-                    if summary_data.key_takeaways:
-                        content += "\n\n### Key Takeaways\n"
-                        content += summary_data.key_takeaways
-
                     if summary_data.action_items:
                         content += "\n\n### Action Items\n"
-                        content += summary_data.action_items
+                        for item in summary_data.action_items:
+                            content += f"- [ ] {item}\n"
 
                     # Add metadata
                     if summary_data.word_count:

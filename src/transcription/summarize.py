@@ -3,10 +3,9 @@ from typing import List
 
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
+from langchain_core.output_parsers import JsonOutputParser
 from dotenv import load_dotenv
 from src.transcription.models import TranscriptionEntry, MeetingSummary
-from src.transcription.prompts import summarize_system_prompt
 from src.utils import get_transcription_text
 
 # Load environment variables
@@ -15,6 +14,24 @@ load_dotenv()
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+summarize_system_prompt = """The following English text is a mechanical transcription of a conversation during a meeting.
+From this transcript, please extract a summary and action items.
+Transcription errors to closely pronounced words should be corrected, and fillers and rephrasing should be ignored.
+The summary should include only proper nouns or the content of the discussion, and should not be supplemented with general knowledge or known facts.
+Action items should only include items explicitly mentioned by participants, and should not include speculation.
+
+Return your response as a JSON object with the following structure:
+{
+  "summary": "Write a clear summary in sentence form, not a list of words",
+  "action_items": ["First action item if any", "Second action item if any"]
+}
+
+If there is no meaningful content, return:
+{
+  "summary": "No meaningful content found.",
+  "action_items": []
+}"""
 
 
 class Summarizer:
@@ -49,42 +66,25 @@ class Summarizer:
                 f"Generating summary for {word_count} words (~{estimated_duration:.1f} min)"
             )
 
-            # Generate summary using LangChain
+            # Generate summary
+            json_parser = JsonOutputParser(pydantic_object=MeetingSummary)
             prompt_template = ChatPromptTemplate.from_messages(
                 [
                     ("system", summarize_system_prompt),
-                    (
-                        "user",
-                        "Meeting duration: {duration} minutes\nWord count: {word_count} words\n\nPlease analyze this meeting transcription and provide a structured summary:\n\n{transcription}",
-                    ),
+                    ("user", "Meeting transcript:\n\n{transcription}"),
                 ]
             )
 
-            chain = prompt_template | self.llm | StrOutputParser()
+            chain = prompt_template | self.llm | json_parser
 
-            response = chain.invoke(
-                {
-                    "transcription": transcription_text,
-                    "word_count": word_count,
-                    "duration": f"{estimated_duration:.1f}",
-                }
-            )
+            response = chain.invoke({"transcription": transcription_text})
 
-            # Split by section headers
-            parts = response.split("## ")
-            for part in parts:
-                part = part.strip()
-                if not part:
-                    continue
-                if part.startswith("Summary"):
-                    summary.summary = part.replace("Summary", "", 1).strip()
-                elif part.startswith("Key Takeaways"):
-                    summary.key_takeaways = part.replace("Key Takeaways", "", 1).strip()
-                elif part.startswith("Action Items"):
-                    summary.action_items = part.replace("Action Items", "", 1).strip()
-                else:
-                    summary.summary = part
+            # Parse JSON response
+            if not isinstance(response, dict):
+                raise ValueError("Response is not a valid JSON object")
 
+            summary.summary = response.get("summary", "No meaningful content found.")
+            summary.action_items = response.get("action_items", [])
             logger.info("Summary generated successfully")
 
             return summary

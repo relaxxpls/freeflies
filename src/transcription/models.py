@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import List
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -22,8 +23,9 @@ class MeetingSummary(BaseModel):
     """Model for meeting summary output"""
 
     summary: str = Field(description="Comprehensive summary of the meeting")
-    key_takeaways: str = Field(default="", description="Key points and takeaways")
-    action_items: str = Field(default="", description="Action items and next steps")
+    action_items: List[str] = Field(
+        default_factory=[], description="Action items and next steps"
+    )
     generated_at: str = Field(
         default_factory=lambda: datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         description="When the summary was generated",

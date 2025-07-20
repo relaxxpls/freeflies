@@ -1,4 +1,5 @@
 from contextlib import _GeneratorContextManager
+from time import time
 from typing import Optional
 from seleniumbase import SB, BaseCase
 import logging
@@ -27,6 +28,7 @@ class MeetBot:
 
             return True
         except Exception as e:
+            self.sb.save_screenshot(f".temp/screenshots/join - {time()}.png")
             logger.error(f"Error joining meeting:", e)
             self.cleanup()
             return False
