@@ -16,6 +16,7 @@ services:
       - ./src:/app/src
       - ./app.py:/app/app.py
       - ./.temp:/app/.temp
+    # gpus: all
     devices:
       # Give access to audio devices
       - /dev/snd:/dev/snd

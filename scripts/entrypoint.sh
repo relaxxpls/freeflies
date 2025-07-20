@@ -26,7 +26,7 @@ sleep 0.5
 
 # 4. Run X11 virtual display (framebuffer)
 Xvfb :99 -ac -screen 0 1920x1080x24 2>&1 &
-export DISPLAY=:99
+# export DISPLAY=:99
 
 # xdotool mousemove 1 1 click 1  # Move mouse out of the way so it doesn't trigger the "pause" overlay on the video tile
 sleep 0.5
