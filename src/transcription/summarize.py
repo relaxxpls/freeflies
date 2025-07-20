@@ -73,9 +73,9 @@ class Summarizer:
             # Split by section headers
             parts = response.split("## ")
             for part in parts:
-                if not part.strip():
-                    continue
                 part = part.strip()
+                if not part:
+                    continue
                 if part.startswith("Summary"):
                     summary.summary = part.replace("Summary", "", 1).strip()
                 elif part.startswith("Key Takeaways"):

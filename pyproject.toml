@@ -2,7 +2,7 @@
 authors = ["Laxman Desai <lolopaw24@gmail.com>"]
 description = "A Streamlit application for recording and transcribing Google Meet sessions"
 name = "freeflies"
-packages = [{ include = "src" }]
+package-mode = false
 readme = "README.md"
 version = "0.1.0"
 
@@ -33,7 +33,3 @@ pytest = "^8.4.1"
 [build-system]
 build-backend = "poetry.core.masonry.api"
 requires = ["poetry-core"]
-
-[tool.poetry.scripts]
-freeflies = "app:start_streamlit"
-test = "tests.seleniumbase:test"

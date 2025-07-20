@@ -3,7 +3,7 @@ from typing import Optional
 from seleniumbase import SB, BaseCase
 import logging
 
-from ..config import BROWSER_PATH, GOOGLE_EMAIL, GOOGLE_URL, GOOGLE_PASSWORD
+from ..config import GOOGLE_EMAIL, GOOGLE_URL, GOOGLE_PASSWORD
 from .utils import xpath_button_aria_label, xpath_button_text
 
 logging.basicConfig(level=logging.INFO)
@@ -51,12 +51,12 @@ class MeetBot:
 
         self.context = SB(
             # test=True,
-            headless=True,
+            # headless=True,
+            xvfb=True,
             chromium_arg="--auto-accept-camera-and-microphone-capture",
             disable_features="VizDisplayCompositor",
             undetectable=True,
-            user_data_dir="./.temp/user_data",
-            binary_location=BROWSER_PATH,
+            user_data_dir="./.temp/user_data2",
         )
         self.sb = self.context.__enter__()
 
@@ -67,12 +67,17 @@ class MeetBot:
         requires_login = not self._is_logged_in()
         if requires_login:
             self._login()
+        else:
+            logger.info("Already logged in")
+
         assert self._is_logged_in()
+
         return requires_login
 
     def _login(self):
         """Login to Google"""
 
+        logger.info("Logging in...")
         assert self.sb is not None
 
         self.sb.type("#identifierId", GOOGLE_EMAIL, timeout=30)
@@ -90,6 +95,11 @@ class MeetBot:
         if self.sb is None:
             return False
 
+        try:
+            self.sb.wait_for_element('//span[text()="Sign in"]', timeout=5)
+            return False
+        except:
+            pass
         title = self.sb.get_title()
         return isinstance(title, str) and "Google Workspace" not in title
 
@@ -103,11 +113,13 @@ class MeetBot:
         self.sb.open(meet_url)
         self.sb.sleep(5)
 
-        if requires_login:
+        try:
             continue_xpath = xpath_button_text(
                 ["Continue without camera", "Continue without camera and microphone"]
             )
             self.sb.click(continue_xpath, timeout=30, delay=2)
+        except:
+            pass
 
         join_xpath = xpath_button_text(["Ask to join", "Join now"])
         self.sb.click(join_xpath, timeout=30, delay=2)

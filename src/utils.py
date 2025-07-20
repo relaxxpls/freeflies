@@ -18,5 +18,5 @@ def get_transcription_text(
     transcription: List[TranscriptionEntry], timestamp: bool = False
 ):
     if timestamp:
-        return "\n".join([f"[{t.timestamp}] {t.text}" for t in transcription]).strip()
+        return "\n\n".join([f"[{t.timestamp}] {t.text}" for t in transcription]).strip()
     return " ".join([t.text for t in transcription]).strip()

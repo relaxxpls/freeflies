@@ -1,0 +1,23 @@
+services:
+  freeflies:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - '8501:8501'
+    environment:
+      # Load environment variables from .env file
+      - PYTHONUNBUFFERED=1
+    env_file:
+      - .env # Make sure to create this file with your environment variables
+    volumes:
+      # Mount downloaded files directory for persistence
+      - ./src:/app/src
+      - ./app.py:/app/app.py
+      - ./.temp:/app/.temp
+    devices:
+      # Give access to audio devices
+      - /dev/snd:/dev/snd
+    privileged: true # Required for audio access
+    restart: unless-stopped

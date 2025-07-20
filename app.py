@@ -257,7 +257,7 @@ def main():
             transcription_text = get_transcription_text(
                 st.session_state.transcription, timestamp=True
             )
-            if transcription_text.strip():
+            if transcription_text:
                 st.markdown(transcription_text)
             else:
                 st.info("Transcription in progress... Please wait")
@@ -296,7 +296,7 @@ def main():
                 # Show metadata
                 if summary_data.word_count:
                     st.caption(
-                        f"📊 Word count: {summary_data.word_count} | Generated: {summary_data.generated_at.strftime('%Y-%m-%d %H:%M:%S')}"
+                        f"📊 Word count: {summary_data.word_count} | Generated: {summary_data.generated_at}"
                     )
 
                 # Add a button to clear the summary
@@ -332,7 +332,7 @@ def main():
 
                     # Add metadata
                     if summary_data.word_count:
-                        content += f"\n\n---\n*Word count: {summary_data.word_count} | Generated: {summary_data.generated_at.strftime('%Y-%m-%d %H:%M:%S')}*"
+                        content += f"\n\n---\n*Word count: {summary_data.word_count} | Generated: {summary_data.generated_at}*"
 
                 return content
 
@@ -379,14 +379,6 @@ def main():
             st.rerun()
         else:
             st.info("Start recording to see stats")
-
-
-def start_streamlit():
-    """Entry point for poetry start command"""
-    import subprocess
-    import sys
-
-    subprocess.run([sys.executable, "-m", "streamlit", "run", "app.py"])
 
 
 if __name__ == "__main__":

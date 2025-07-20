@@ -5,7 +5,6 @@ from os import path, getenv
 load_dotenv()
 
 # Bot settings
-BROWSER_PATH = "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"
 GOOGLE_URL = "https://accounts.google.com/ServiceLogin?ltmpl=meet&continue=https://meet.google.com?hs=193&ec=wgc-meet-hero-signin"
 
 GOOGLE_EMAIL = getenv("GOOGLE_EMAIL", "test@test.com")
