@@ -28,7 +28,8 @@ class MeetBot:
 
             return True
         except Exception as e:
-            self.sb.save_screenshot(f".temp/screenshots/join - {time()}.png")
+            if self.sb:
+                self.sb.save_screenshot(f".temp/screenshots/join - {time()}.png")
             logger.error(f"Error joining meeting:", e)
             self.cleanup()
             return False
@@ -58,7 +59,7 @@ class MeetBot:
             chromium_arg="--auto-accept-camera-and-microphone-capture",
             disable_features="VizDisplayCompositor",
             undetectable=True,
-            user_data_dir="./.temp/user_data2",
+            # user_data_dir="./.temp/user_data2",
         )
         self.sb = self.context.__enter__()
 

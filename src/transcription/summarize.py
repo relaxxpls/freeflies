@@ -22,16 +22,16 @@ The summary should include only proper nouns or the content of the discussion, a
 Action items should only include items explicitly mentioned by participants, and should not include speculation.
 
 Return your response as a JSON object with the following structure:
-{
+{{
   "summary": "Write a clear summary in sentence form, not a list of words",
   "action_items": ["First action item if any", "Second action item if any"]
-}
+}}
 
 If there is no meaningful content, return:
-{
+{{
   "summary": "No meaningful content found.",
   "action_items": []
-}"""
+}}"""
 
 
 class Summarizer:
@@ -86,12 +86,11 @@ class Summarizer:
             summary.summary = response.get("summary", "No meaningful content found.")
             summary.action_items = response.get("action_items", [])
             logger.info("Summary generated successfully")
-
-            return summary
-
         except ValueError as e:
             logger.error(f"Validation error in summarization: {str(e)}")
-            return MeetingSummary(summary=f"❌ Configuration error: {str(e)}")
+            summary.summary = f"❌ Configuration error: {str(e)}"
         except Exception as e:
             logger.error(f"Error summarizing transcription: {str(e)}")
-            return MeetingSummary(summary=f"❌ Error generating summary: {str(e)}")
+            summary.summary = f"❌ Error generating summary: {str(e)}"
+        finally:
+            return summary

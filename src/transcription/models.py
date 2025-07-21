@@ -23,9 +23,7 @@ class MeetingSummary(BaseModel):
     """Model for meeting summary output"""
 
     summary: str = Field(description="Comprehensive summary of the meeting")
-    action_items: List[str] = Field(
-        default_factory=[], description="Action items and next steps"
-    )
+    action_items: List[str] = Field(default=[], description="Action items")
     generated_at: str = Field(
         default_factory=lambda: datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         description="When the summary was generated",
