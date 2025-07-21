@@ -57,7 +57,7 @@ streamlit run app.py
 
 ## How It Works
 
-1. **Meeting Join**: The `MeetBot` class uses SeleniumBase to automate browser interactions and join Google Meet sessions.
+1. **Meeting Join**: The `MeetBot` class uses SeleniumBase to automate browser interactions and join Google Meet sessions. Uses Time based OTPs for ensuring offline 2fa, hence stays undetected.
 2. **AudioPulse**: AudioPulse is used to create a loopback of output to input and Xvfb is used as a virtual display
 3. **Audio Recording**: The `AudioRecorder` class captures microphone input in real-time
 4. **Transcription**: The `Transcriber` class processes audio chunks using OpenAI Whisper and returns a text stream
@@ -78,3 +78,7 @@ The system analyzes each audio chunk using multiple criteria:
 1. Use feature vectors for speaker identification and some hacky ways for labelling speakers (ref [1](https://github.com/openai/whisper/discussions/827), [2](https://github.com/natto-maki/Transcriber))
 2. Use [Silero Vad](https://github.com/snakers4/silero-vad) for detecting human text
 3. Make meeting bot scalable and use Kafka for streaming the audio
+
+## References
+
+1. [Pulse Audio Loopback Setup](https://endless.ersoft.org/pulseaudio-loopback/)

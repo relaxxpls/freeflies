@@ -9,6 +9,7 @@ GOOGLE_URL = "https://accounts.google.com/ServiceLogin?ltmpl=meet&continue=https
 
 GOOGLE_EMAIL = getenv("GOOGLE_EMAIL", "test@test.com")
 GOOGLE_PASSWORD = getenv("GOOGLE_PASSWORD", "test")
+TOTP_SECRET = getenv("TOTP_SECRET", "random")
 
 # Transcription settings
 DEVICE = torch.device(

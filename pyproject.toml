@@ -1,6 +1,6 @@
 [tool.poetry]
 authors = ["Laxman Desai <lolopaw24@gmail.com>"]
-description = "A Streamlit application for recording and transcribing Google Meet sessions"
+description = "A Streamlit application for recording, transcribing and summarizing Google Meet sessions"
 name = "freeflies"
 package-mode = false
 readme = "README.md"
@@ -11,10 +11,13 @@ asyncio = "^3.4.3"
 langchain = "^0.3.26"
 langchain-core = "^0.3.69"
 langchain-openai = "^0.3.28"
+numpy = "^2.3.1"
 pandas = "^2.3.1"
 pillow = "^11.3.0"
+pyautogui = "^0.9.54"
 pydantic = "^2.11.7"
-python = "^3.12"
+pyotp = "^2.9.0"
+python = "^3.11"
 python-dotenv = "^1.1.1"
 requests = "^2.32.4"
 seleniumbase = "^4.40.6"

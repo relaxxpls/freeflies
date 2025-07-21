@@ -1,10 +1,11 @@
 from contextlib import _GeneratorContextManager
 from time import time
 from typing import Optional
+from pyotp import TOTP
 from seleniumbase import SB, BaseCase
 import logging
 
-from ..config import GOOGLE_EMAIL, GOOGLE_URL, GOOGLE_PASSWORD
+from ..config import GOOGLE_EMAIL, GOOGLE_URL, GOOGLE_PASSWORD, TOTP_SECRET
 from .utils import xpath_button_aria_label, xpath_button_text
 
 logging.basicConfig(level=logging.INFO)
@@ -83,13 +84,22 @@ class MeetBot:
         logger.info("Logging in...")
         assert self.sb is not None
 
-        self.sb.type("#identifierId", GOOGLE_EMAIL, timeout=30)
+        self.sb.type("#identifierId", GOOGLE_EMAIL)
         self.sb.click("#identifierNext", delay=2)
-        self.sb.sleep(5)
+        self.sb.sleep(3)
 
-        self.sb.type('#password input[type="password"]', GOOGLE_PASSWORD, timeout=30)
+        self.sb.type('#password input[type="password"]', GOOGLE_PASSWORD)
         self.sb.click("#passwordNext", delay=2)
-        self.sb.sleep(5)
+        self.sb.sleep(3)
+
+        try:
+            self.sb.type("#totpPin", TOTP(TOTP_SECRET).now())
+            next_xpath = xpath_button_text("Next")
+            self.sb.click(next_xpath, delay=2)
+            if next_xpath:
+                self.sb.sleep(5)
+        except:
+            pass
 
         logger.info("Google login activity: Done")
 
