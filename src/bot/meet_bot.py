@@ -59,7 +59,7 @@ class MeetBot:
             chromium_arg="--auto-accept-camera-and-microphone-capture",
             disable_features="VizDisplayCompositor",
             undetectable=True,
-            # user_data_dir="./.temp/user_data2",
+            # user_data_dir="./.temp/user_data",
         )
         self.sb = self.context.__enter__()
 
@@ -110,7 +110,7 @@ class MeetBot:
         """Login and join a meeting asynchronously"""
 
         if self.sb is None:
-            requires_login = self._setup_browser()
+            self._setup_browser()
             assert self.sb is not None
 
         self.sb.open(meet_url)
@@ -120,7 +120,7 @@ class MeetBot:
             continue_xpath = xpath_button_text(
                 ["Continue without camera", "Continue without camera and microphone"]
             )
-            self.sb.click(continue_xpath, timeout=30, delay=2)
+            self.sb.click(continue_xpath, delay=2)
         except:
             pass
 
