@@ -1,5 +1,5 @@
-# FROM pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime
-FROM python:3.12-slim-bookworm
+FROM pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime
+# FROM python:3.12-slim-bookworm
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1

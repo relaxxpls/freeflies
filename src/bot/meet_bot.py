@@ -1,4 +1,5 @@
 from contextlib import _GeneratorContextManager
+from os import environ
 from time import time
 from typing import Optional
 from pyotp import TOTP
@@ -53,6 +54,8 @@ class MeetBot:
     def _setup_browser(self) -> bool:
         """Setup browser and context and logs in if needed"""
 
+        # set enviroment variable DISPLAY=:99
+        environ["DISPLAY"] = ":99"
         self.context = SB(
             # test=True,
             # headless=True,

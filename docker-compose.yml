@@ -17,7 +17,7 @@ services:
       - ./app.py:/app/app.py
       - ./.temp:/app/.temp
       - ./.env:/app/.env
-    # gpus: all
+    gpus: all
     devices:
       # Give access to audio devices
       - /dev/snd:/dev/snd
