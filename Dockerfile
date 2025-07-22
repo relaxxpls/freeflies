@@ -86,14 +86,16 @@ RUN apt-get install -y \
     pulseaudio \
     pulseaudio-utils \
     ffmpeg \
-    alsa-utils \
     libsndfile1 \
-    supervisor
+    gnupg
 
-RUN apt install libcudnn8 libcudnn8-dev -y
+# Install cuDNN 8
+RUN wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-keyring_1.0-1_all.deb
+RUN dpkg -i cuda-keyring_1.0-1_all.deb
+RUN apt update
+RUN apt install -y libcudnn8 libcudnn8-dev
 
 RUN adduser root pulse-access
-# RUN useradd -ms /bin/bash streamer
 
 # Install Chrome and ChromeDriver via seleniumbase
 RUN seleniumbase get chromedriver
