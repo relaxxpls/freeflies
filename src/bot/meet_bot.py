@@ -5,11 +5,9 @@ from typing import Optional
 from pyotp import TOTP
 from seleniumbase import SB, BaseCase
 import logging
-
-from ..config import GOOGLE_EMAIL, GOOGLE_URL, GOOGLE_PASSWORD, TOTP_SECRET
+from src.config import CACHE_DIR, GOOGLE_EMAIL, GOOGLE_URL, GOOGLE_PASSWORD, TOTP_SECRET
 from .utils import xpath_button_aria_label, xpath_button_text
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -31,8 +29,8 @@ class MeetBot:
             return True
         except Exception as e:
             if self.sb:
-                self.sb.save_screenshot(f".temp/screenshots/join - {time()}.png")
-            logger.error(f"Error joining meeting:", e)
+                self.sb.save_screenshot(f"{CACHE_DIR}/screenshots/join_{time()}.png")
+            logger.error("Error joining meeting:", e)
             self.cleanup()
             return False
 
@@ -48,7 +46,7 @@ class MeetBot:
 
             return True
         except Exception as e:
-            logger.error(f"Error leaving meeting:", e)
+            logger.error("Error leaving meeting:", e)
             return False
 
     def _setup_browser(self) -> bool:
@@ -63,7 +61,7 @@ class MeetBot:
             chromium_arg="--auto-accept-camera-and-microphone-capture",
             disable_features="VizDisplayCompositor",
             undetectable=True,
-            # user_data_dir="./.temp/user_data",
+            # user_data_dir=f"{CACHE_DIR}/user_data",
         )
         self.sb = self.context.__enter__()
 
@@ -88,19 +86,19 @@ class MeetBot:
         assert self.sb is not None
 
         self.sb.type("#identifierId", GOOGLE_EMAIL)
-        self.sb.click("#identifierNext", delay=2)
+        self.sb.click("#identifierNext", delay=0.5)
         self.sb.sleep(3)
 
         self.sb.type('#password input[type="password"]', GOOGLE_PASSWORD)
-        self.sb.click("#passwordNext", delay=2)
+        self.sb.click("#passwordNext", delay=0.5)
         self.sb.sleep(3)
 
         try:
             self.sb.type("#totpPin", TOTP(TOTP_SECRET).now())
             next_xpath = xpath_button_text("Next")
-            self.sb.click(next_xpath, delay=2)
+            self.sb.click(next_xpath, delay=0.5)
             if next_xpath:
-                self.sb.sleep(5)
+                self.sb.sleep(3)
         except:
             pass
 
@@ -133,12 +131,12 @@ class MeetBot:
             continue_xpath = xpath_button_text(
                 ["Continue without camera", "Continue without camera and microphone"]
             )
-            self.sb.click(continue_xpath, delay=2)
+            self.sb.click(continue_xpath, delay=0.5)
         except:
             pass
 
         join_xpath = xpath_button_text(["Ask to join", "Join now"])
-        self.sb.click(join_xpath, timeout=30, delay=2)
+        self.sb.click(join_xpath, delay=0.5)
 
         logger.info("Waiting to join meeting...")
 

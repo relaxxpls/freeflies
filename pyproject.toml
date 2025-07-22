@@ -1,37 +1,41 @@
-[tool.poetry]
-authors = ["Laxman Desai <lolopaw24@gmail.com>"]
+[project]
+authors = [{ name = "Laxman Desai", email = "lolopaw24@gmail.com" }]
 description = "A Streamlit application for recording, transcribing and summarizing Google Meet sessions"
 name = "freeflies"
-package-mode = false
 readme = "README.md"
+requires-python = ">=3.11,<3.13"
 version = "0.1.0"
+
+[project.urls]
+repository = "https://github.com/lolopaw/freeflies"
+
+[tool.poetry]
+package-mode = false
 
 [tool.poetry.dependencies]
 asyncio = "^3.4.3"
 langchain = "^0.3.26"
-langchain-core = "^0.3.69"
+langchain-core = "^0.3.70"
 langchain-openai = "^0.3.28"
 numpy = "^2.3.1"
-pandas = "^2.3.1"
 pillow = "^11.3.0"
 pyautogui = "^0.9.54"
 pydantic = "^2.11.7"
 pyotp = "^2.9.0"
-python = "^3.11"
 python-dotenv = "^1.1.1"
-requests = "^2.32.4"
 seleniumbase = "^4.40.6"
 sounddevice = "^0.5.2"
 soundfile = "^0.13.1"
 streamlit = "^1.47.0"
 torch = "^2.7.1"
-transformers = "^4.53.2"
-watchdog = "^6.0.0"
+transformers = "^4.53.3"
+whisperx = "^3.4.2"
 
 [tool.poetry.group.dev.dependencies]
 black = "^25.1.0"
 flake8 = "^7.3.0"
 pytest = "^8.4.1"
+watchdog = "^6.0.0"
 
 [build-system]
 build-backend = "poetry.core.masonry.api"

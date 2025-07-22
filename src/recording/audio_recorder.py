@@ -8,10 +8,8 @@ from typing import Optional, List
 from datetime import datetime
 import sounddevice as sd
 import soundfile as sf
+from src.config import CACHE_DIR, SAMPLE_RATE
 
-from ..config import SAMPLE_RATE, DOWNLOADS_DIRECTORY
-
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -27,6 +25,7 @@ class AudioRecorder:
     audio_queue: Queue[np.ndarray] = Queue()
     recording_thread: Optional[threading.Thread] = None
     audio_data: List[np.ndarray] = []
+    chunk_counter: int = 0  # Track number of chunks processed
 
     def _audio_callback(self, indata: np.ndarray, frames: int, time_info, status):
         """Callback function for audio recording"""
@@ -36,10 +35,10 @@ class AudioRecorder:
         if not self.is_recording:
             return
 
-        # Add audio data to queue for real-time processing
-        audio_chunk = indata.copy()
-        self.audio_queue.put(audio_chunk)
+        audio_chunk = indata.copy().flatten()
 
+        # Add audio data to queue for real-time processing
+        self.audio_queue.put(audio_chunk)
         # Store audio data for full recording
         self.audio_data.append(audio_chunk)
 
@@ -74,9 +73,10 @@ class AudioRecorder:
                 raise Exception("Recording is already active")
 
             # Reset recording state
-            self.output_file = path.join(DOWNLOADS_DIRECTORY, output_file)
+            self.output_file = path.join(f"{CACHE_DIR}/audio", output_file)
             self.is_recording = True
             self.start_time = time.time()
+            self.chunk_counter = 0  # Reset chunk counter
 
             # Start recording thread
             self.recording_thread = threading.Thread(
@@ -131,9 +131,13 @@ class AudioRecorder:
     def is_queue_empty(self) -> bool:
         return self.audio_queue.qsize() == 0
 
-    def get_audio_chunk(self) -> Optional[np.ndarray]:
+    def get_audio_chunk(self) -> Optional[tuple[np.ndarray, float]]:
+        """Get audio chunk with its time offset from recording start."""
         try:
-            return self.audio_queue.get_nowait()
+            audio_chunk = self.audio_queue.get_nowait()
+            time_offset = self.chunk_counter * self.chunk_duration
+            self.chunk_counter += 1
+            return (audio_chunk, time_offset)
         except Exception as e:
             if not isinstance(e, Empty):
                 logger.error(f"Error getting audio chunk: {str(e)}")
@@ -147,6 +151,8 @@ class AudioRecorder:
 
         # Clear audio queue
         self.audio_data = []
+        self.chunk_counter = 0
+
         while not self.audio_queue.empty():
             self.audio_queue.get_nowait()
 

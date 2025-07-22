@@ -5,11 +5,14 @@ import threading
 import time
 from datetime import datetime, timedelta
 import atexit
+from src.bot import MeetBot
+from src.recording import AudioRecorder
+from src.transcription import Summarizer, Transcriber
+from src.utils import transcription_to_markdown, validate_meet_url
+import logging
 
-from src.bot.meet_bot import MeetBot
-from src.recording.audio_recorder import AudioRecorder
-from src.transcription import TranscriptionEntry, Summarizer, Transcriber
-from src.utils import get_transcription_text, validate_meet_url
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Configure Streamlit page
 st.set_page_config(
@@ -65,6 +68,7 @@ def start_recording(meet_url: str):
 
     try:
         st.session_state.transcription = []
+        st.session_state.current_summary = None
 
         with st.spinner("Joining Google Meet..."):
             # Join the meeting
@@ -107,27 +111,22 @@ def background_transcription():
             st.session_state.recording_active
             or not st.session_state.audio_recorder.is_queue_empty()
         ):
-            try:
-                # Get audio chunk
-                audio_chunk = st.session_state.audio_recorder.get_audio_chunk()
-                if audio_chunk is None:
-                    continue
-
-                # Transcribe audio chunk
-                transcription = st.session_state.transcriber.transcribe_chunk(
-                    audio_chunk
-                )
-                if not transcription:
-                    continue
-
-                # ! Simplify this later
-                current_transcription = st.session_state.transcription.copy()
-                current_transcription.append(TranscriptionEntry(text=transcription))
-                st.session_state.transcription = current_transcription
-
-                st.rerun()
-            finally:
+            # Get & transcribe audio chunk with time offset
+            chunk_data = st.session_state.audio_recorder.get_audio_chunk()
+            if chunk_data is None:
                 time.sleep(2)
+                continue
+
+            audio_chunk, time_offset = chunk_data
+            transcription_results = st.session_state.transcriber.transcribe_chunk(
+                audio_chunk, time_offset
+            )
+            if not transcription_results:
+                continue
+
+            st.session_state.transcription.extend(transcription_results)
+            logger.debug("background_transcription: transcribed chunk")
+            st.rerun()
 
     except Exception as e:
         st.error(f"Transcription error: {str(e)}")
@@ -237,12 +236,7 @@ def main():
                 )
                 duration = meeting["end_time"] - meeting["start_time"]
                 with st.expander(f"Meeting {i+1} - {timestamp} ({duration:.2f}s)"):
-                    st.text_area(
-                        "Transcription",
-                        value=get_transcription_text(meeting["transcription"]),
-                        height=200,
-                        key=f"history_{i}",
-                    )
+                    st.markdown(transcription_to_markdown(meeting["transcription"]))
         else:
             st.info("No meetings recorded yet")
 
@@ -254,13 +248,7 @@ def main():
 
         # Real-time transcription display
         if st.session_state.transcription and len(st.session_state.transcription) > 0:
-            transcription_text = get_transcription_text(
-                st.session_state.transcription, timestamp=True
-            )
-            if transcription_text:
-                st.markdown(transcription_text)
-            else:
-                st.info("Transcription in progress... Please wait")
+            st.markdown(transcription_to_markdown(st.session_state.transcription))
 
             # Summarize transcription
             def generate_summary():
@@ -308,7 +296,7 @@ def main():
 
                 # Add transcription
                 content += "## Transcription\n"
-                content += get_transcription_text(st.session_state.transcription)
+                content += transcription_to_markdown(st.session_state.transcription)
 
                 # Add summary if available
                 if st.session_state.current_summary:
@@ -349,14 +337,14 @@ def main():
     with col2:
         st.header("📊 Stats")
 
-        # Show transcriber loading status
-        if st.session_state.transcriber.is_loading:
-            st.info("🔄 Loading transcriber model...")
-            # Auto-refresh while loading to update status
-            time.sleep(2)
-            st.rerun()
-        elif not st.session_state.transcriber.is_loaded:
-            st.warning("⚠️ Transcriber not ready")
+        # # Show transcriber loading status
+        # if st.session_state.transcriber.is_loading:
+        #     st.info("🔄 Loading transcriber model...")
+        #     # Auto-refresh while loading to update status
+        #     time.sleep(2)
+        #     st.rerun()
+        # elif not st.session_state.transcriber.is_loaded:
+        #     st.warning("⚠️ Transcriber not ready")
 
         if st.session_state.recording_active:
             duration = st.session_state.audio_recorder.get_recording_duration()
@@ -364,7 +352,7 @@ def main():
 
             # Estimate word count from transcription
             word_count = len(
-                get_transcription_text(st.session_state.transcription).split()
+                transcription_to_markdown(st.session_state.transcription).split()
             )
             st.metric("Words Transcribed", word_count)
 

@@ -90,6 +90,8 @@ RUN apt-get install -y \
     libsndfile1 \
     supervisor
 
+RUN apt install libcudnn8 libcudnn8-dev -y
+
 RUN adduser root pulse-access
 # RUN useradd -ms /bin/bash streamer
 

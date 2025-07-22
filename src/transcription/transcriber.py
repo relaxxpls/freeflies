@@ -1,305 +1,68 @@
 import numpy as np
 import torch
 import logging
-import threading
-from typing import Optional, Generator, Any
-from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
-from transformers.pipelines import pipeline
-from ..config import (
-    DEVICE,
-    SAMPLE_RATE,
-    VAD_ENERGY_THRESHOLD,
-    VAD_SILENCE_THRESHOLD,
-    VAD_MIN_SPEECH_DURATION,
-    VAD_MAX_REPETITION_RATIO,
-    VAD_MIN_AUDIO_LENGTH,
-)
+from typing import List, Generator
+from whisperx.alignment import align, load_align_model
+from whisperx.asr import load_model
+from whisperx.diarize import DiarizationPipeline, assign_word_speakers
+from .models import DiarizationResult
+from src.config import CACHE_DIR
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 class Transcriber:
     """
-    Transcriber class for converting audio to text using HuggingFace Transformers
-
-    This class handles:
-    - Real-time audio transcription using HuggingFace models
-    - Voice activity detection to prevent hallucination
-    - Multiple HuggingFace ASR model options
-    - Language detection and translation
+    Transcriber class for transcribing audio streams.
     """
 
-    # Model settings
-    model_name: str = "openai/whisper-base"  # or "openai/whisper-large-v3"
-    language: str = "en"
-    pipeline: Optional[Any] = None
-    processor: Optional[Any] = None
-    model: Optional[Any] = None
-
-    is_loading: bool = False
-    is_loaded: bool = False
-
-    # Transcription settings
-    chunk_length = 30  # seconds
+    batch_size = 16
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    language = "en"
 
     def __init__(self):
-        if self.is_loading or self.is_loaded:
-            return
+        logger.info(f"Transcriber initializing on {self.device}")
+        self.pipeline = load_model(
+            "large-v3-turbo",
+            device=self.device,
+            compute_type="float16",
+            language=self.language,
+            download_root=f"{CACHE_DIR}/whisper",
+        )
+        self.align_model, self.align_metadata = load_align_model(
+            language_code=self.language, device=self.device
+        )
+        self.diarize_model = DiarizationPipeline(device=self.device)
 
+    def transcribe_chunk(
+        self, audio: np.ndarray, time_offset: float = 0.0
+    ) -> List[DiarizationResult]:
         try:
-            self.is_loading = True
-            logger.info(
-                f"Loading HuggingFace model: {self.model_name} on device: {DEVICE}"
+            transcribed_result = self.pipeline.transcribe(
+                audio, batch_size=self.batch_size
             )
 
-            # Load model in a separate thread to avoid blocking
-            def load_worker():
-                try:
-                    # Initialize HuggingFace ASR pipeline
-                    self.pipeline = pipeline(
-                        "automatic-speech-recognition",
-                        model=self.model_name,
-                        device=DEVICE,
-                        torch_dtype=torch.float16,
-                    )
-
-                    # Also load processor and model separately for more control
-                    self.processor = AutoProcessor.from_pretrained(self.model_name)
-                    self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
-                        self.model_name,
-                        torch_dtype=torch.float16,
-                        low_cpu_mem_usage=True,
-                        use_safetensors=True,
-                    )
-
-                    self.model.to(DEVICE)  # type: ignore
-
-                    self.is_loaded = True
-                    logger.info(f"HuggingFace model loaded successfully")
-                except Exception as e:
-                    logger.error(f"Failed to load HuggingFace model: {str(e)}")
-                finally:
-                    self.is_loading = False
-
-            loading_thread = threading.Thread(target=load_worker, daemon=True)
-            loading_thread.start()
-
-        except Exception as e:
-            logger.error(f"Error initializing model loading: {str(e)}")
-            self.is_loading = False
-
-    def _has_voice_activity(self, audio: np.ndarray) -> bool:
-        """
-        Detect if audio contains voice activity using energy-based VAD
-
-        Args:
-            audio: Audio array to analyze
-
-        Returns:
-            bool: True if voice activity is detected, False otherwise
-        """
-        try:
-            # Calculate RMS energy
-            rms_energy = np.sqrt(np.mean(audio**2))
-
-            # Check if energy exceeds threshold
-            if rms_energy < VAD_ENERGY_THRESHOLD:
-                logger.debug(
-                    f"Low energy detected: {rms_energy:.6f} < {VAD_ENERGY_THRESHOLD}"
-                )
-                return False
-
-            # Calculate zero crossing rate (indicator of speech vs noise)
-            zero_crossings = np.sum(np.diff(np.signbit(audio)))
-            zero_crossing_rate = zero_crossings / len(audio)
-
-            # Speech typically has ZCR between 0.01 and 0.35
-            if zero_crossing_rate < 0.001 or zero_crossing_rate > 0.5:
-                logger.debug(f"Abnormal zero crossing rate: {zero_crossing_rate:.6f}")
-                return False
-
-            # Check for silence percentage
-            silence_samples = np.sum(np.abs(audio) < VAD_ENERGY_THRESHOLD * 0.1)
-            silence_ratio = silence_samples / len(audio)
-
-            if silence_ratio > VAD_SILENCE_THRESHOLD:
-                logger.debug(
-                    f"Too much silence: {silence_ratio:.2f} > {VAD_SILENCE_THRESHOLD}"
-                )
-                return False
-
-            # Calculate spectral centroid (frequency distribution indicator)
-            # Simple approximation using FFT
-            if len(audio) > 256:  # Minimum samples for meaningful FFT
-                fft = np.abs(np.fft.rfft(audio))
-                freqs = np.fft.rfftfreq(len(audio), 1 / SAMPLE_RATE)
-
-                # Calculate spectral centroid
-                if np.sum(fft) > 0:
-                    spectral_centroid = np.sum(freqs * fft) / np.sum(fft)
-                    # Speech typically has spectral centroid between 500-4000 Hz
-                    if spectral_centroid < 200 or spectral_centroid > 8000:
-                        logger.debug(
-                            f"Unusual spectral centroid: {spectral_centroid:.1f} Hz"
-                        )
-                        return False
-
-            logger.debug(
-                f"Voice activity detected - Energy: {rms_energy:.6f}, ZCR: {zero_crossing_rate:.6f}"
-            )
-            return True
-
-        except Exception as e:
-            logger.error(f"Error in voice activity detection: {str(e)}")
-            # On error, be conservative and assume there might be voice activity
-            return True
-
-    def _detect_hallucination(self, text: str) -> bool:
-        """
-        Detect potential hallucination in transcribed text
-
-        Args:
-            text: Transcribed text to analyze
-
-        Returns:
-            bool: True if hallucination is detected, False otherwise
-        """
-        try:
-            if not text or len(text.strip()) < 3:
-                return True
-
-            words = text.lower().split()
-            if len(words) < 2:
-                return False
-
-            # Check for excessive repetition
-            word_count = {}
-            for word in words:
-                word_count[word] = word_count.get(word, 0) + 1
-
-            # Find most repeated word
-            max_repetitions = max(word_count.values())
-            repetition_ratio = max_repetitions / len(words)
-
-            if repetition_ratio > VAD_MAX_REPETITION_RATIO:
-                logger.debug(f"Excessive repetition detected: {repetition_ratio:.2f}")
-                return True
-
-            # Check for suspiciously long sequences of repeated short words
-            consecutive_repeats = 0
-            max_consecutive = 0
-            prev_word = ""
-
-            for word in words:
-                if word == prev_word and len(word) <= 4:  # Short words repeated
-                    consecutive_repeats += 1
-                    max_consecutive = max(max_consecutive, consecutive_repeats)
-                else:
-                    consecutive_repeats = 0
-                prev_word = word
-
-            if max_consecutive > 5:
-                logger.debug(f"Long consecutive repetition detected: {max_consecutive}")
-                return True
-
-            return False
-
-        except Exception as e:
-            logger.error(f"Error in hallucination detection: {str(e)}")
-            return False
-
-    def _prepare_audio(self, audio: np.ndarray) -> np.ndarray:
-        """Prepare audio (convert to 16kHz mono)"""
-        try:
-            # Convert to float32 if needed
-            if audio.dtype != np.float32:
-                audio = audio.astype(np.float32)
-
-            # Convert to mono if stereo
-            if len(audio.shape) > 1:
-                audio = np.mean(audio, axis=1)
-
-            # Resample to 16kHz if needed (HuggingFace models expect 16kHz)
-            # if SAMPLE_RATE != 16000:
-            #     audio = librosa.resample(audio, orig_sr=SAMPLE_RATE, target_sr=16000)
-
-            # Normalize audio
-            audio = audio / (np.max(np.abs(audio)) + 1e-8)
-
-            return audio
-
-        except Exception as e:
-            logger.error(f"Error preparing audio: {str(e)}")
-            return audio
-
-    def transcribe_chunk(self, audio_chunk: np.ndarray) -> Optional[str]:
-        try:
-            if not self.pipeline or not self.is_loaded:
-                return None
-
-            # Check minimum audio length
-            duration = len(audio_chunk) / SAMPLE_RATE
-            if duration < VAD_MIN_AUDIO_LENGTH:
-                logger.debug(
-                    f"Audio chunk too short: {duration:.2f}s < {VAD_MIN_AUDIO_LENGTH}s"
-                )
-                return None
-
-            # Prepare audio
-            audio = self._prepare_audio(audio_chunk)
-
-            # Voice Activity Detection - skip transcription if no voice detected
-            if not self._has_voice_activity(audio):
-                logger.debug("No voice activity detected, skipping transcription")
-                return None
-
-            # Check for minimum speech duration within the chunk
-            # Calculate number of samples that should contain speech
-            min_speech_samples = int(VAD_MIN_SPEECH_DURATION * SAMPLE_RATE)
-            speech_samples = np.sum(np.abs(audio) > VAD_ENERGY_THRESHOLD * 0.5)
-
-            if speech_samples < min_speech_samples:
-                logger.debug(
-                    f"Insufficient speech content: {speech_samples} < {min_speech_samples}"
-                )
-                return None
-
-            # Transcribe using HuggingFace pipeline
-            result = self.pipeline(
+            aligned_result = align(
+                transcribed_result["segments"],
+                self.align_model,
+                self.align_metadata,
                 audio,
-                return_timestamps=False,
-                generate_kwargs={
-                    "language": self.language,
-                    "task": "transcribe",
-                    "max_new_tokens": 100,  # Limit output length to prevent long hallucinations
-                    "num_beams": 1,  # Use greedy decoding for faster, more consistent results
-                    "do_sample": False,  # Disable sampling to reduce randomness
-                },
+                self.device,
             )
+            diarize_df = self.diarize_model(audio, self.batch_size)
+            diarized_result = assign_word_speakers(diarize_df, aligned_result)
 
-            text = result["text"]
-            if not isinstance(text, str):
-                raise Exception("Transcribed text is not a string")
-            text = text.strip()
+            result_list = [
+                DiarizationResult(
+                    text=segment["text"],
+                    speaker=segment["speaker"],
+                    start=segment["start"] + time_offset,  # Add time offset
+                    end=segment["end"] + time_offset,  # Add time offset
+                )
+                for segment in diarized_result["segments"]
+            ]
 
-            # Skip empty or very short results
-            if not text or len(text) < 3:
-                logger.debug("Transcription result too short or empty")
-                return None
-
-            # Detect and filter out hallucinations
-            if self._detect_hallucination(text):
-                logger.debug(f"Hallucination detected, filtering out: '{text[:50]}...'")
-                return None
-
-            if text and len(text) > 0:
-                logger.info(f"Transcribed: {text}")
-                return text
-
-            return None
-
+            return result_list
         except Exception as e:
             logger.error(f"Error transcribing chunk: {str(e)}")
             return None
@@ -307,7 +70,7 @@ class Transcriber:
     def transcribe_stream(
         self,
         audio_generator: Generator[np.ndarray, None, None],
-    ) -> Generator[str, None, None]:
+    ) -> Generator[List[DiarizationResult], None, None]:
         """
         Transcribe audio stream in real-time
 
@@ -315,12 +78,9 @@ class Transcriber:
             audio_generator: Generator that yields audio chunks
 
         Yields:
-            str: Transcribed text chunks
+            List[DiarizationResult]: Transcribed and diarized results
         """
         try:
-            if not self.model or not self.is_loaded:
-                return
-
             logger.info("Starting stream transcription")
 
             for audio_chunk in audio_generator:
@@ -339,19 +99,22 @@ class Transcriber:
                 del self.pipeline
                 self.pipeline = None
 
-            if self.model:
-                del self.model
-                self.model = None
+            if self.align_model:
+                del self.align_model
+                self.align_model = None
 
-            if self.processor:
-                del self.processor
-                self.processor = None
+            if self.align_metadata:
+                del self.align_metadata
+                self.align_metadata = None
+
+            if self.diarize_model:
+                del self.diarize_model
+                self.diarize_model = None
 
             # Clear GPU memory if using CUDA
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
-            self.is_loaded = False
             logger.info("Transcriber cleanup completed")
         except Exception as e:
             logger.error(f"Error during cleanup: {str(e)}")

@@ -1,22 +1,15 @@
 from datetime import datetime
 from typing import List
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 
-class TranscriptionEntry(BaseModel):
-    """Model for individual transcription entries"""
+class DiarizationResult(BaseModel):
+    """Model for diarization result"""
 
-    text: str = Field(min_length=1, description="The transcribed text")
-    timestamp: str = Field(
-        default_factory=lambda: datetime.now().strftime("%H:%M:%S"),
-        description="Timestamp of the transcription",
-    )
-
-    @field_validator("text")
-    def text_not_empty(cls, v: str):
-        if not v.strip():
-            raise ValueError("Text cannot be empty or only whitespace")
-        return v.strip()
+    text: str = Field(description="The transcribed text")
+    speaker: str = Field(description="Speaker of the transcription")
+    start: float = Field(description="Start time of the transcription in seconds", ge=0)
+    end: float = Field(description="End time of the transcription in seconds", ge=0)
 
 
 class MeetingSummary(BaseModel):
