@@ -1,37 +1,48 @@
 import logging
 from typing import List
-
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from dotenv import load_dotenv
-from src.transcription.models import TranscriptionEntry, MeetingSummary
-from src.utils import get_transcription_text
+from .models import DiarizationResult, MeetingSummary
+from src.utils import transcription_to_markdown
 
-# Load environment variables
 load_dotenv()
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-summarize_system_prompt = """The following English text is a mechanical transcription of a conversation during a meeting.
-From this transcript, please extract a summary and action items.
-Transcription errors to closely pronounced words should be corrected, and fillers and rephrasing should be ignored.
-The summary should include only proper nouns or the content of the discussion, and should not be supplemented with general knowledge or known facts.
-Action items should only include items explicitly mentioned by participants, and should not include speculation.
+summarize_system_prompt = """The following text is a diarized transcription of a meeting conversation with identified speakers and timestamps.
+The format shows each speaker's contributions grouped together with timestamps in markdown format.
+
+From this speaker-attributed transcript, please extract a comprehensive summary and action items.
+
+Guidelines:
+- Use speaker information to understand conversation flow and attribute statements correctly
+- Transcription errors to closely pronounced words should be corrected, and fillers should be ignored
+- The summary should capture key discussion points, decisions made, and who was involved
+- When relevant, include speaker attribution for important statements or decisions (e.g., "Speaker 01 agreed to...")
+- Action items should only include items explicitly mentioned by participants with clear ownership when stated
+- Do not add speculation or general knowledge beyond what was discussed
+- Pay attention to speaker interactions, agreements, disagreements, and conversation dynamics
 
 Return your response as a JSON object with the following structure:
 {{
-  "summary": "Write a clear summary in sentence form, not a list of words",
-  "action_items": ["First action item if any", "Second action item if any"]
+  "summary": "Write a clear summary that captures the main discussion points, decisions, and speaker interactions. Include speaker attribution for key statements when relevant.",
+  "action_items": ["Action item with owner if mentioned (e.g., 'Speaker 01: Review the proposal')", "Second action item if any"]
 }}
 
 If there is no meaningful content, return:
 {{
   "summary": "No meaningful content found.",
   "action_items": []
-}}"""
+}}
+
+Example action item formats:
+- "Speaker 01: Complete the project report by Friday"
+- "Review budget proposal (discussed by Speaker 02)"
+- "Schedule follow-up meeting"
+
+Focus on extracting value from the speaker-separated conversation structure."""
 
 
 class Summarizer:
@@ -45,11 +56,11 @@ class Summarizer:
         )
 
     def summarize_transcription(
-        self, transcription: List[TranscriptionEntry]
+        self, transcription: List[DiarizationResult]
     ) -> MeetingSummary:
         try:
             # Extract text and calculate metrics
-            transcription_text = get_transcription_text(transcription)
+            transcription_text = transcription_to_markdown(transcription)
             word_count = len(transcription_text.split())
 
             summary = MeetingSummary(
