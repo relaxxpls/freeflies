@@ -13,6 +13,10 @@ A Streamlit application that summarizes Google Meet sessions
 - 💾 **Meeting History**: Saves recordings and transcriptions for future reference
 - 🔄 **Streaming Display**: Shows transcription as it happens
 
+## Architecture
+
+![Architecture Diagram](arch.png)
+
 ## Demo
 
 TODO: attach demo link
