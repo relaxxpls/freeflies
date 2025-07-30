@@ -1,11 +1,14 @@
 import logging
 from typing import List
-from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import JsonOutputParser
+
 from dotenv import load_dotenv
-from .models import DiarizationResult, MeetingSummary
+from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_openai import ChatOpenAI
+
 from src.utils import transcription_to_markdown
+
+from .models import DiarizationResult, MeetingSummary
 
 load_dotenv()
 

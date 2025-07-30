@@ -1,13 +1,15 @@
-from os import path
-from queue import Queue, Empty
-import threading
-import numpy as np
-import time
 import logging
-from typing import Optional, List
+import threading
+import time
 from datetime import datetime
+from os import path
+from queue import Empty, Queue
+from typing import List, Optional
+
+import numpy as np
 import sounddevice as sd
 import soundfile as sf
+
 from src.config import CACHE_DIR, SAMPLE_RATE
 
 logger = logging.getLogger(__name__)

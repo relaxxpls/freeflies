@@ -1,6 +1,6 @@
-import torch
+from os import getenv, path
+
 from dotenv import load_dotenv
-from os import path, getenv
 
 load_dotenv()
 

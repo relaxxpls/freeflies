@@ -1,10 +1,13 @@
-from contextlib import _GeneratorContextManager
+import logging
+from contextlib import _GeneratorContextManager, suppress
 from time import time
 from typing import Optional
+
 from pyotp import TOTP
 from seleniumbase import SB, BaseCase
-import logging
-from src.config import CACHE_DIR, GOOGLE_EMAIL, GOOGLE_URL, GOOGLE_PASSWORD, TOTP_SECRET
+
+from src.config import CACHE_DIR, GOOGLE_EMAIL, GOOGLE_PASSWORD, GOOGLE_URL, TOTP_SECRET
+
 from .utils import xpath_button_aria_label, xpath_button_text
 
 logger = logging.getLogger(__name__)
@@ -90,14 +93,12 @@ class MeetBot:
         self.sb.click("#passwordNext", delay=0.5)
         self.sb.sleep(3)
 
-        try:
+        with suppress(Exception):
             self.sb.type("#totpPin", TOTP(TOTP_SECRET).now())
             next_xpath = xpath_button_text("Next")
             self.sb.click(next_xpath, delay=0.5)
             if next_xpath:
                 self.sb.sleep(3)
-        except:
-            pass
 
         logger.info("Google login activity: Done")
 
@@ -106,11 +107,9 @@ class MeetBot:
         if self.sb is None:
             return False
 
-        try:
+        with suppress(Exception):
             self.sb.wait_for_element('//span[text()="Sign in"]', timeout=5)
             return False
-        except:
-            pass
         title = self.sb.get_title()
         return isinstance(title, str) and "Google Workspace" not in title
 
@@ -124,13 +123,11 @@ class MeetBot:
         self.sb.open(meet_url)
         self.sb.sleep(5)
 
-        try:
+        with suppress(Exception):
             continue_xpath = xpath_button_text(
                 ["Continue without camera", "Continue without camera and microphone"]
             )
             self.sb.click(continue_xpath, delay=0.5)
-        except:
-            pass
 
         join_xpath = xpath_button_text(["Ask to join", "Join now"])
         self.sb.click(join_xpath, delay=0.5)

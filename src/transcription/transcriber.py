@@ -1,12 +1,15 @@
+import logging
+from typing import Generator, List
+
 import numpy as np
 import torch
-import logging
-from typing import List, Generator
 from whisperx.alignment import align, load_align_model
 from whisperx.asr import load_model
 from whisperx.diarize import DiarizationPipeline, assign_word_speakers
-from .models import DiarizationResult
+
 from src.config import CACHE_DIR
+
+from .models import DiarizationResult
 
 logger = logging.getLogger(__name__)
 

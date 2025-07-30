@@ -1,6 +1,7 @@
-from datetime import timedelta
 import re
-from src.transcription import DiarizationResult
+from datetime import timedelta
+
+from .transcription import DiarizationResult
 
 
 def validate_meet_url(url: str) -> bool:
@@ -26,8 +27,12 @@ def transcription_to_markdown(result: list[DiarizationResult]) -> str:
     - `0:11` Of course she can.
     - `0:12` No, things won't be for long.
     """
-    speaker_name = lambda speaker: speaker.title().replace("_", " ")
-    format_time = lambda seconds: str(timedelta(seconds=int(seconds)))
+
+    def speaker_name(speaker: str) -> str:
+        return speaker.title().replace("_", " ")
+
+    def format_time(seconds: float) -> str:
+        return str(timedelta(seconds=int(seconds)))
 
     output = []
     current_speaker = None

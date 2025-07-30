@@ -5,4 +5,5 @@ def xpath_button_text(text: str | list[str]):
     return f"//button[span[{contains}]]"
 
 
-xpath_button_aria_label = lambda label: f'//button[@aria-label="{label}"]'
+def xpath_button_aria_label(label: str):
+    return f'//button[@aria-label="{label}"]'

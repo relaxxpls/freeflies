@@ -1,15 +1,17 @@
-from typing import Optional
-import streamlit as st
-from streamlit.runtime.scriptrunner import add_script_run_ctx
+import atexit
+import logging
 import threading
 import time
 from datetime import datetime, timedelta
-import atexit
+from typing import Optional
+
+import streamlit as st
+from streamlit.runtime.scriptrunner import add_script_run_ctx
+
 from src.bot import MeetBot
 from src.recording import AudioRecorder
 from src.transcription import Summarizer, Transcriber
 from src.utils import transcription_to_markdown, validate_meet_url
-import logging
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -235,7 +237,7 @@ def main():
                     "%Y-%m-%d %H:%M:%S"
                 )
                 duration = meeting["end_time"] - meeting["start_time"]
-                with st.expander(f"Meeting {i+1} - {timestamp} ({duration:.2f}s)"):
+                with st.expander(f"Meeting {i + 1} - {timestamp} ({duration:.2f}s)"):
                     st.markdown(transcription_to_markdown(meeting["transcription"]))
         else:
             st.info("No meetings recorded yet")
@@ -291,7 +293,7 @@ def main():
 
             # Download transcription and summary
             def get_combined_content():
-                content = f"# Meeting Transcription\n"
+                content = "# Meeting Transcription\n"
                 content += f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
 
                 # Add transcription
